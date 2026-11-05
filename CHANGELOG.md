@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here. Versions follow [Semantic Versioning](https://semver.org); the release workflow writes new entries from [Conventional Commits](https://www.conventionalcommits.org).
 
+## [0.4.0] - 2026-11-05
+
+### Features
+
+- feat: manage subscription accounts of the subscription router (ed6d849)
+
+Changes since v0.3.0.
+
 ## [0.3.0] - 2026-11-05
 
 ### Features
