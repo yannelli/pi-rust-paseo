@@ -1,0 +1,80 @@
+{
+  "name": "ship-change",
+  "description": "Implement a change, check it against current docs, fix gaps, ship it, and watch production.",
+  "context": "memory",
+  "background": true,
+  "agent": {
+    "model": "anthropic/claude-opus-5-5",
+    "thinking": "medium"
+  },
+  "steps": [
+    {
+      "name": "implement",
+      "agent": {
+        "model": "ask",
+        "thinking": "high",
+        "mcp": [
+          "context7"
+        ]
+      },
+      "tasks": [
+        {
+          "prompt": "Implement this change: {{change}}"
+        }
+      ]
+    },
+    {
+      "name": "ship",
+      "agent": {
+        "tools": [
+          "bash",
+          "read"
+        ],
+        "subagents": [
+          {
+            "agent": "explore",
+            "models": [
+              "anthropic/claude-haiku-5-5"
+            ],
+            "thinking": [
+              "low"
+            ]
+          }
+        ],
+        "env": {
+          "DATABASE_URL": "${STAGING_DATABASE_URL}"
+        }
+      },
+      "tasks": [
+        {
+          "prompt": "Open a PR against {{base_branch}} and wait for CI.",
+          "delay": "90s",
+          "repeat": 15,
+          "every": "2m",
+          "until": "All CI checks pass"
+        },
+        {
+          "prompt": "Merge the PR.",
+          "confirm": true
+        }
+      ]
+    },
+    {
+      "name": "monitor",
+      "context": "none",
+      "agent": {
+        "model": "anthropic/claude-haiku-5-5",
+        "thinking": "low"
+      },
+      "tasks": [
+        {
+          "prompt": "Check the production logs for errors since the deploy.",
+          "delay": "5m",
+          "repeat": 3,
+          "every": "5m",
+          "optional": true
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "name": "pi-rust-paseo-snapshots",
+  "private": true,
+  "description": "Renders the README screenshots and hero image from demo data with react-native-web",
+  "scripts": {
+    "snapshots": "node shoot.mjs"
+  },
+  "devDependencies": {
+    "@fontsource-variable/inter": "^5.2.5",
+    "@fontsource-variable/jetbrains-mono": "^5.2.5",
+    "@tanstack/react-query": "^5.90.11",
+    "esbuild": "^0.25.0",
+    "lucide-react": "^0.552.0",
+    "playwright-core": "^1.56.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-native-web": "^0.21.0"
+  }
+}

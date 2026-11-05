@@ -1,0 +1,63 @@
+{
+  "name": "@yannelli/pi-rust-paseo",
+  "version": "0.1.0",
+  "description": "Manage Pi Rust, its extensions, and its multi-agent workflows from Paseo",
+  "license": "MIT",
+  "keywords": [
+    "paseo",
+    "paseo-plugin",
+    "pi",
+    "pi-rust",
+    "workflows",
+    "agents"
+  ],
+  "author": "Ryan Yannelli",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yannelli/pi-rust-paseo.git"
+  },
+  "homepage": "https://github.com/yannelli/pi-rust-paseo#readme",
+  "bugs": {
+    "url": "https://github.com/yannelli/pi-rust-paseo/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "paseo-plugin.json",
+    "OVERVIEW.md",
+    "LICENSE",
+    "assets/icon.png",
+    "assets/hero.png",
+    "assets/screenshots/overview.png",
+    "assets/screenshots/run.png",
+    "assets/screenshots/workflows.png",
+    "assets/screenshots/composer.png",
+    "assets/screenshots/mobile.png",
+    "index.client.tsx",
+    "index.server.ts",
+    "client/",
+    "server/",
+    "shared/"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "rm -rf .test-build && tsc -p tsconfig.test.json && node --test --enable-source-maps \".test-build/test/*.test.js\" \"test/*.test.mjs\"",
+    "check": "npm run typecheck && npm test",
+    "release:dry-run": "node scripts/release.mjs --dry-run",
+    "snapshots": "npm --prefix scripts/snapshots run snapshots"
+  },
+  "devDependencies": {
+    "@getpaseo/plugin": "0.15.0",
+    "@tanstack/react-query": "^5.90.11",
+    "@types/node": "^24.19.2",
+    "@types/react": "~19.2.0",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "typescript": "^5.9.3",
+    "zod": "^4.4.3"
+  }
+}
