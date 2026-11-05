@@ -174,15 +174,17 @@ test("context lists the prompt files in use and the context files in pi's order"
   const result = await context({ cwd: project });
   assert.equal(result.system.active, "project");
   assert.equal(result.append.active, "global");
+  // Context files above the temporary root (such as a stray /tmp/AGENTS.md) are the machine's.
+  const ours = result.contextFiles.filter((file) => file.path.startsWith(root));
   assert.deepEqual(
-    result.contextFiles.map((file) => [file.origin, path.relative(home, file.path)]),
+    ours.map((file) => [file.origin, path.relative(home, file.path)]),
     [
       ["agent", ".pi/agent/AGENTS.md"],
       ["parent", "code/CLAUDE.md"],
       ["workspace", "code/app/AGENTS.md"],
     ],
   );
-  const includes = result.contextFiles[2].includes;
+  const includes = ours[2].includes;
   assert.deepEqual(
     includes.map((include) => [include.ref, include.exists]),
     [
@@ -194,7 +196,7 @@ test("context lists the prompt files in use and the context files in pi's order"
   assert.deepEqual(result.missing, []);
   const global = await context({});
   assert.equal(global.system.active, "default");
-  assert.equal(global.contextFiles.length, 1);
+  assert.equal(global.contextFiles.filter((file) => file.path.startsWith(root)).length, 1);
 });
 
 test("skills come from every place pi reads, ranked, with settings filters and plugins", async () => {
