@@ -35,7 +35,7 @@ paseo plugin add github:yannelli/pi-rust-paseo
 paseo plugin ls pi-rust
 ```
 
-To pin a release, add `--ref v0.1.0`. Plugins run trusted code with the daemon user's access.
+To pin a release, add `--ref` and a tag, for example `--ref v0.1.1`. Plugins run trusted code with the daemon user's access.
 
 The plugin finds pi through its settings, then `$PI_BIN`, then `pi` on the daemon's `PATH`, `~/.local/bin`, or `~/.cargo/bin`. It reads `~/.pi/agent` unless `PI_CODING_AGENT_DIR` or the plugin settings name another directory.
 
