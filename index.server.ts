@@ -1,4 +1,4 @@
-import type { PaseoApi } from "@getpaseo/client";
+import type { PaseoApi } from "./server/paseo";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { pluginSettings } from "./shared/contracts";
 import { registerHandlers } from "./server/handlers";

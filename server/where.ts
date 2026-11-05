@@ -2,7 +2,7 @@
 // it is a linked worktree and of which main checkout, and whether pi trusts it.
 import { execFile } from "node:child_process";
 import path from "node:path";
-import type { PaseoApi } from "@getpaseo/client";
+import type { PaseoApi } from "./paseo";
 import type { RpcInput, RpcOutput } from "@getpaseo/plugin";
 import type { dirInfoRpc } from "../shared/contracts";
 import { exists } from "./fsutil";

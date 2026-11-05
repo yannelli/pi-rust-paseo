@@ -1,4 +1,4 @@
-import type { PaseoApi } from "@getpaseo/client";
+import type { PaseoApi } from "./paseo";
 import type { PluginRpcContract, RpcInput, RpcOutput } from "@getpaseo/plugin";
 import type { input as ZodInput, output as ZodOutput, ZodType } from "zod";
 import type { PluginServerContext } from "@getpaseo/plugin/server";

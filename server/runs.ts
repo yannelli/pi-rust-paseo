@@ -5,7 +5,7 @@
 import { spawn } from "node:child_process";
 import { closeSync, openSync, promises as fs } from "node:fs";
 import path from "node:path";
-import type { PaseoApi } from "@getpaseo/client";
+import type { PaseoApi } from "./paseo";
 import type { RpcInput, RpcOutput } from "@getpaseo/plugin";
 import {
   RUN_CARD_KIND,
