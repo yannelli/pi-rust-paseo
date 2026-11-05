@@ -2,18 +2,18 @@
 
 # Pi Rust for Paseo
 
-A [Paseo](https://paseo.sh) plugin for [Pi Rust](https://github.com/yannelli/pi-rust). Manage pi, its extensions, Claude Code plugins, skills, prompts, context, and the `workflows` extension's multi-agent workflows from desktop or your phone. Paseo and pi's TUI use the same files and commands, so a change in one shows up in the other.
+A [Paseo](https://paseo.sh) plugin for [Pi Rust](https://github.com/yannelli/pi-rust). Manage pi and run multi-agent workflows from your desktop or phone.
 
 - See pi's version, health, default model, subscription limits, and usage. Update pi, extensions, and model catalogs.
 - Turn extensions on and off, update or remove packages, and install from the marketplace, npm, Git, or a path, globally or for one workspace.
 - Run any extension's commands, edit its config files, and manage deferred's rules for tools, skills, context files, and prompt sections.
-- Add Claude Code plugin marketplaces, and install, update, turn off, and uninstall their plugins.
+- Add Claude Code plugin marketplaces and install, update, turn off, or uninstall their plugins.
 - See every skill and prompt template pi loads, from every folder, plugin, and package. Turn them on and off, edit them, and create new ones.
-- Edit SYSTEM.md, APPEND_SYSTEM.md, and the AGENTS.md and CLAUDE.md files pi loads for a workspace, and check their `@path` includes.
+- Edit `SYSTEM.md`, `APPEND_SYSTEM.md`, and the `AGENTS.md` and `CLAUDE.md` files pi loads for a workspace, and check their `@path` includes.
 - Create, edit, copy, and delete workflows in a form or as JSON, with the same validation as pi. A model can draft one from a description.
 - Start a run in the current workspace, another workspace, or a new worktree. Watch the step timeline, agent output, reports, and memory live.
 - Approve or skip waiting tasks, end waits, message working agents, and stop, resume, or delete runs.
-- See each agent's background tasks, runs, goal, and timers in a pill in its composer.
+- See each agent's background tasks, runs, goal, and timers in its composer pill.
 - Give Paseo agents tools to run workflows and manage extensions.
 
 ## Table of contents
@@ -42,7 +42,7 @@ A [Paseo](https://paseo.sh) plugin for [Pi Rust](https://github.com/yannelli/pi-
 
 ![A running workflow: the step timeline on the left, and the docs-check step's output on the right with tool calls and a message from the user](assets/screenshots/run.png)
 
-![Workflows of a worktree: one saved in the worktree, one from the main checkout with a Run here button, and global workflows drawn as pipelines of steps](assets/screenshots/workflows.png)
+![Workflows in a worktree: one saved in the worktree, one from the main checkout with a Run here button, and global workflows drawn as pipelines of steps](assets/screenshots/workflows.png)
 
 ![Three phone screens: runs in a worktree, the status popover with background tasks and an approval, and the overview in the light theme](assets/screenshots/mobile.png)
 
@@ -52,7 +52,9 @@ The screenshots use sample data. See [CONTRIBUTING.md](CONTRIBUTING.md#screensho
 
 - Paseo 0.15.0 or newer, with **Enable plugins** turned on in **Settings → Plugins**.
 - [Pi Rust](https://github.com/yannelli/pi-rust) on the machine that runs the Paseo daemon.
-- Workflows need the `workflows` extension. Run `pi install marketplace:workflows` or install it from the plugin's Extensions tab. The status pill also reads the `background-tasks`, `goal`, and `timers` extensions when they are installed.
+- Workflows need the `workflows` extension. Run `pi install marketplace:workflows` or install it from the plugin's Extensions tab.
+
+The status pill also reads state from the `background-tasks`, `goal`, and `timers` extensions when they are installed.
 
 ## Install
 
@@ -61,31 +63,40 @@ paseo plugin add github:yannelli/pi-rust-paseo
 paseo plugin ls pi-rust
 ```
 
-To pin a release, add `--ref` and a tag, for example `--ref v0.3.0`. Plugins run trusted code with the daemon user's access.
+To pin a release, add `--ref` and a tag, for example `--ref v0.3.0`.
+
+Plugins run trusted code with the daemon user's access.
 
 The plugin finds pi through its settings, then `$PI_BIN`, then `pi` on the daemon's `PATH`, `~/.local/bin`, or `~/.cargo/bin`. It reads `~/.pi/agent` unless `PI_CODING_AGENT_DIR` or the plugin settings name another directory.
 
 ## Use
 
-Open **Pi Rust** from the sidebar or the Command Center (**⌘K**). Use the workspace picker at the top to choose the project for settings, extensions, workflows, and sessions. It lists Paseo workspaces by project and branch and remembers your choice.
+Open **Pi Rust** from the sidebar or the Command Center (**⌘K**). The workspace selection applies to settings, extensions, workflows, and sessions. The picker lists Paseo workspaces by project and branch and remembers your choice.
 
 ### Overview
 
-Tiles show pi's version, enabled extensions, workflows, and runs. Below them, you can change the default model, update pi, extensions, or model catalogs, run `pi doctor`, check subscription limits, and read usage by model. **Use claude-opus-5-5 · medium** sets the recommended model. **settings.json** edits pi's global or workspace settings.
+Change the default model, update pi, extensions, or model catalogs, run `pi doctor`, check subscription limits, and read usage by model. **Use claude-opus-5-5 · medium** sets the recommended model. **settings.json** edits pi's global or workspace settings.
 
 ### Extensions
 
-Switch built-in and installed extensions on or off, update or remove packages, search the marketplace, and install from `npm:`, `git:`, a URL, or a path. **Global** changes `~/.pi/agent/settings.json`; **This workspace** changes the workspace's `.pi/settings.json`. Running pi sessions pick up changes on `/reload`.
+Switch built-in and installed extensions on or off, update or remove packages, search the marketplace, and install from `npm:`, `git:`, a URL, or a path. **Global** changes `~/.pi/agent/settings.json`. **This workspace** changes the workspace's `.pi/settings.json`. Running pi sessions pick up changes on `/reload`.
 
 ![Extensions as a grid of cards with switches, followed by packages and the marketplace](assets/screenshots/extensions.png)
 
 Tap an extension to manage it:
 
-- **Commands.** Run its slash commands, such as `/deferred status`, `/goal-status`, `/todos`, or `/bg-clear`, and read their output. Each runs in a temporary pi session in the workspace; a command that would start an agent turn is stopped, and questions that need pi's UI are cancelled.
+- **Commands.** Run its slash commands, such as `/deferred status`, `/goal-status`, `/todos`, or `/bg-clear`, and read their output. Each runs in a temporary pi session in the workspace. The plugin stops commands that would start an agent turn and cancels questions that need pi's UI.
 - **Config files.** Edit `ext/<name>.json` in pi's agent directory and in the workspace's `.pi` folder.
 - **Docs.** Open the extension's README.
 
-**deferred** gets its own manager. It lists every rule from the 5 places the extension reads (global and workspace `deferred.json`, the global and workspace `deferred` setting, and repo blocks) in the order they apply, with a one-tap mode switch for each: `on`, `names`, `deferred`, `user` (skills), or `off`. Add a rule for tools, skills, context files, or prompt sections, globally, for the workspace, or for the workspace's GitHub repository, with suggestions from pi's skills, MCP servers, and tools. **Check a name** shows which rule decides a tool or skill. It also sets `auto` and `maxResults` and shows `/deferred status`. Rules in `deferred.json` files are read-only, as in pi.
+**deferred** has its own manager:
+
+- Rules appear in the order they apply, from 5 sources: global and workspace `deferred.json`, the global and workspace `deferred` setting, and repo blocks. Each rule has a one-tap mode switch: `on`, `names`, `deferred`, `user` (skills), or `off`.
+- Add rules for tools, skills, context files, or prompt sections. Scope them globally, to the workspace, or to the workspace's GitHub repository. Suggestions come from pi's skills, MCP servers, and tools.
+- **Check a name** shows which rule decides a tool or skill.
+- Set `auto` and `maxResults`, and view `/deferred status`.
+
+Rules in `deferred.json` files are read-only, as in pi.
 
 ![The deferred manager: status, options, a name check that resolves mcp__github__delete_repo to off by a repo rule, and the tool rules with mode switches](assets/screenshots/deferred.png)
 
@@ -93,11 +104,11 @@ Tap an extension to manage it:
 
 The `claude-marketplace` extension installs Claude Code plugins into pi: their commands become prompt templates, and their skills, agents, hooks, and MCP servers load in pi sessions. The tab lists your marketplaces and their plugins.
 
-- **Add marketplace** takes a GitHub `owner/repo`, a git URL, a local folder, or `claude-plugins-official`, for every workspace or for this one. **Import from Claude Code** adds the marketplaces and plugins of your Claude Code settings.
+- **Add marketplace** takes a GitHub `owner/repo`, a git URL, a local folder, or `claude-plugins-official`, for every workspace or for this one. **Import from Claude Code** adds the marketplaces and plugins from your Claude Code settings.
 - Each marketplace has an auto-update switch, **Update**, and **Remove**.
-- Install a plugin for every workspace or for this one. Its switch turns it off (pi stops loading what it added) and on again. **Update**, **Reinstall**, and **Uninstall** are in its row, with the skills, commands, agents, hooks, and MCP servers it added, and the parts pi does not support.
+- Install a plugin globally or for this workspace. Its switch controls whether pi loads what the plugin added. The row has **Update**, **Reinstall**, and **Uninstall** controls. It also lists the skills, commands, agents, hooks, and MCP servers the plugin added, plus any parts pi does not support.
 
-Each change runs `/claude-plugins …` in a temporary pi session, just as it would in pi. Running pi sessions pick changes up on `/reload`. If the extension is missing or off, the tab installs or turns it on.
+Each change runs `/claude-plugins …` in a temporary pi session. Running pi sessions pick changes up on `/reload`. If the extension is missing or off, the tab installs or turns it on.
 
 ![The Claude plugins tab: two marketplaces with auto-update switches, and the installed plugins, one opened to show its commands and agents](assets/screenshots/plugins.png)
 
@@ -105,11 +116,11 @@ Each change runs `/claude-plugins …` in a temporary pi session, just as it wou
 
 The tab lists every skill pi loads for the workspace, grouped by source and ranked the way pi ranks them: packages and settings entries, the workspace's `.pi/skills` and `.agents/skills`, pi's `skills` folder, `~/.agents/skills`, and Claude plugins. It marks overridden skills, skills that only `/skill:name` runs, and name or description problems. When `deferred` is on, it shows each skill's deferred mode.
 
-- A skill's switch writes a `+` or `-` entry to the `skills` list in settings.json, as `pi config` does: global for global skills, the workspace's for workspace skills.
-- Tap a skill to read or edit its `SKILL.md`, or to delete it. Skills from Claude plugins and packages are read-only here; their plugin or package owns them.
+- A skill's switch writes a `+` or `-` entry to the `skills` list in `settings.json`, as `pi config` does. Global skills use global settings. Workspace skills use workspace settings.
+- Tap a skill to read or edit its `SKILL.md`, or to delete it. Skills from Claude plugins and packages are read-only here because their plugin or package owns them.
 - **New skill** writes `<name>/SKILL.md` in pi's folder, `~/.agents/skills` (which other coding agents read too), or the workspace's `.pi/skills` or `.agents/skills`.
 
-**Prompt templates** works the same way for `/name` templates in pi's `prompts` folder, the workspace's `.pi/prompts`, and Claude plugins, with the `prompts` settings list.
+The **Prompt templates** tab works the same way for `/name` templates in pi's `prompts` folder, the workspace's `.pi/prompts`, and Claude plugins. Its switches write to the `prompts` list in `settings.json`.
 
 ![The Skills tab: a workspace skill, pi's skills with one turned off and one that only /skill:name runs, ~/.agents skills, and a skill from a Claude plugin, each with its deferred mode](assets/screenshots/skills.png)
 
@@ -117,13 +128,13 @@ The tab lists every skill pi loads for the workspace, grouped by source and rank
 
 - **System prompt.** `SYSTEM.md` replaces pi's built-in prompt, and `APPEND_SYSTEM.md` adds to it. Create, edit, or delete the global and workspace files. The tab shows which ones pi uses here.
 - **Context files.** The `AGENTS.md` or `CLAUDE.md` files pi adds to every session in the workspace, in pi's order: the agent directory's, then one per directory from `/` down to the workspace. Each lists its `@path` lines and whether those files exist. Create the global or workspace file if it is missing.
-- **Includes.** The config of the `context-include` extension, which inlines `@path` lines.
+- **Includes.** Configure the `context-include` extension, which inlines `@path` lines.
 
 ![The Context tab: the system prompt files with the global APPEND_SYSTEM.md in use, and the context files with their includes](assets/screenshots/context.png)
 
 ### Workflows
 
-Each workflow appears as a pipeline: its steps, their models, and markers for approvals, loops, and waits. The editor supports the full format: models (or **Ask at run**), thinking, tools, skills, MCP servers, subagent rules, environment, limits, and the task options for waits, repeats, goals, approvals, and skills. New workflows start with `anthropic/claude-opus-5-5` at medium thinking.
+Each workflow appears as a pipeline: its steps, their models, and markers for approvals, loops, and waits. The editor supports the full format: models (or **Ask at run**), thinking, tools, skills, MCP servers, subagent rules, environment, and limits. Task options cover waits, repeats, goals, approvals, and skills. New workflows start with `anthropic/claude-opus-5-5` at medium thinking.
 
 ![The workflow editor with the pipeline rail on the left and the docs-check step's tasks and agent settings on the right](assets/screenshots/editor.png)
 
@@ -131,7 +142,7 @@ In a worktree, the tab also lists workflows saved in the main checkout and runs 
 
 ### Runs
 
-**Run** asks for `{{inputs}}`, any models marked **Ask at run**, and where to run: this workspace, another workspace, or a new worktree that Paseo creates. Runs that wait for you come first in the Runs tab. A run's view follows the working step, streams the agent's output, and lets you message the agent.
+**Run** asks for `{{inputs}}`, any models marked **Ask at run**, and where to run: this workspace, another workspace, or a new worktree that Paseo creates. Runs waiting for you appear first in the Runs tab. The run view follows the current step, streams the agent's output, and lets you message the agent.
 
 ![The run dialog with New worktree selected: the project, an optional branch and base, and the workspace title](assets/screenshots/run-dialog.png)
 
@@ -139,15 +150,15 @@ In a worktree, the tab also lists workflows saved in the main checkout and runs 
 
 ### Status in the chat
 
-Each pi agent's composer has a **Pi Rust** pill next to Tasks and Subagents; other agents get it while a run is active in their workspace. The label sums up the agent's work, such as `Approve · 1 bg · 2 runs`. The popover shows approvals, workflow runs, the workspace's goal, timers, and background tasks with output from the agent's pi session. It refreshes every second or two.
+Each pi agent's composer has a **Pi Rust** pill next to Tasks and Subagents. Other agents get it while a run is active in their workspace. The label sums up the agent's work, such as `Approve · 1 bg · 2 runs`. The popover shows approvals, workflow runs, the workspace's goal, timers, and background tasks with output from the agent's pi session. It refreshes every second or two.
 
 ![The composer of a pi agent with the Pi Rust pill open: an approval, a running E2E suite with its output, a failed lint, a finished type check, runs, a goal, and a timer](assets/screenshots/composer.png)
 
 ### Composer and agents
 
-- `/workflow run <name> key=value` starts a run and adds a live card to the agent's timeline; `--worktree[=branch]` runs it in a new worktree. `/workflow approve`, `stop`, `resume`, and `skip` control runs.
+- `/workflow run <name> key=value` starts a run and adds a live card to the agent's timeline. Add `--worktree[=branch]` to run it in a new worktree. `/workflow approve`, `stop`, `resume`, and `skip` control runs.
 - `/pi-ext install|remove|enable|disable|update <source> [-l]` manages extensions.
-- Paseo agents get the `pi_workflows` and `pi_extensions` tools; `pi_extensions` can also run an extension's command, such as `deferred status`. An agent that starts a run gets the step reports as a message when the run ends. The tools cannot approve tasks.
+- Paseo agents get the `pi_workflows` and `pi_extensions` tools. `pi_extensions` can also run an extension's command, such as `deferred status`. An agent that starts a run gets the step reports as a message when the run ends. The tools cannot approve tasks.
 
 ## Settings
 
@@ -173,15 +184,15 @@ The plugin runs `pi` and `git` on the daemon machine. It also:
 - Signals a background task's process group when you stop it.
 - Creates Paseo worktrees only when you ask for one.
 
-Updates and installs download from the Pi Rust releases, the extension marketplace, npm, or Git, as `pi` does. The `claude-marketplace` extension clones Claude plugin marketplaces and plugins from Git. The plugin sends nothing anywhere else.
+Updates and installs download from Pi Rust releases, the extension marketplace, npm, or Git, as `pi` does. The `claude-marketplace` extension clones Claude plugin marketplaces and plugins from Git. The plugin sends nothing anywhere else.
 
 Project workflows and settings follow pi's project trust: the plugin does not save project workflows where pi does not trust the directory.
 
 ## How it works
 
-Runs start the same way they do in pi. The plugin writes `run.json` in `<agentDir>/ext/workflows/runs/<id>/` and starts `pi-rust-ext workflows --runner <dir>` detached, so runs outlive the plugin. Commands to a runner (`stop`, `skip`, `approve`, `mode`, `interrupt`) are JSON files in the run's `commands/` folder, and messages to the working agent are JSON strings in `inbox/`. The plugin keeps `sessions/<pid>` fresh, so a foreground run stops when the plugin stops, as it does when pi quits.
+Runs start the same way they do in pi. The plugin writes `run.json` in `<agentDir>/ext/workflows/runs/<id>/` and starts `pi-rust-ext workflows --runner <dir>` detached, so runs outlive the plugin. Commands to a runner (`stop`, `skip`, `approve`, `mode`, `interrupt`) are JSON files in the run's `commands/` folder. Messages to the working agent are JSON strings in `inbox/`. The plugin keeps `sessions/<pid>` fresh, so a foreground run stops when the plugin stops, as it does when pi quits.
 
-The skill catalog comes from `pi --mode rpc` with `PI_WORKFLOW_RUN` set, so pi does not watch or report runs. A Paseo pi agent's persistence session id is its pi session id; the status pill uses it to find the agent's background tasks and timers.
+The skill catalog comes from `pi --mode rpc` with `PI_WORKFLOW_RUN` set, so pi does not watch or report runs. A Paseo pi agent's persistence session id is its pi session id. The status pill uses it to find the agent's background tasks and timers.
 
 | Path | Contents |
 | --- | --- |
