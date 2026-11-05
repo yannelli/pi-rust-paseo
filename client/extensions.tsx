@@ -14,6 +14,7 @@ import {
   type PackageInfo,
   type ScopeName,
 } from "../shared/contracts";
+import { ExtensionDetail } from "./extension-detail";
 import { useRpcMutation, useRpcQuery } from "./queries";
 import {
   Badge,
@@ -63,6 +64,20 @@ export function ExtensionsTab({ cwd }: { cwd: string }) {
   });
   const act: Act = (action, target) => run.mutate({ action, target, scope, cwd: cwd || undefined });
   const busyTarget = run.isPending ? run.variables?.target : undefined;
+  const [selected, setSelected] = useState<string | null>(null);
+  const list = useRpcQuery(extensionsListRpc, { scope, cwd: cwd || undefined }, { staleTime: 10_000, enabled: Boolean(selected) });
+  const selectedExt = selected ? list.data?.extensions.find((ext) => ext.reference === selected) : undefined;
+  if (selected && selectedExt) {
+    return (
+      <ExtensionDetail
+        ext={selectedExt}
+        cwd={cwd}
+        busy={busyTarget === selectedExt.reference}
+        onToggle={() => act(selectedExt.enabled ? "disable" : "enable", selectedExt.reference)}
+        onBack={() => setSelected(null)}
+      />
+    );
+  }
   return (
     <Stack gap={24}>
       <Row gap={12} wrap justify="space-between">
@@ -96,7 +111,7 @@ export function ExtensionsTab({ cwd }: { cwd: string }) {
               {last.result.output ? <CodeBlock text={last.result.output} maxHeight={200} /> : null}
             </Notice>
           ) : null}
-          <Installed scope={scope} cwd={cwd} act={act} busyTarget={busyTarget} />
+          <Installed scope={scope} cwd={cwd} act={act} busyTarget={busyTarget} onOpen={setSelected} />
           <Marketplace act={act} busyTarget={busyTarget} scope={scope} />
           <InstallSource scope={scope} act={act} busy={run.isPending && run.variables?.action === "install"} />
         </>
@@ -105,7 +120,7 @@ export function ExtensionsTab({ cwd }: { cwd: string }) {
   );
 }
 
-function Installed({ scope, cwd, act, busyTarget }: { scope: ScopeName; cwd: string; act: Act; busyTarget?: string }) {
+function Installed({ scope, cwd, act, busyTarget, onOpen }: { scope: ScopeName; cwd: string; act: Act; busyTarget?: string; onOpen: (reference: string) => void }) {
   const { theme } = useUi();
   const list = useRpcQuery(extensionsListRpc, { scope, cwd: cwd || undefined }, { staleTime: 10_000 });
   const [filter, setFilter] = useState("");
@@ -132,7 +147,7 @@ function Installed({ scope, cwd, act, busyTarget }: { scope: ScopeName; cwd: str
             <Grid>
               {extensions.map((ext) => (
                 <Cell key={ext.reference}>
-                  <ExtensionCard ext={ext} busy={busyTarget === ext.reference} onToggle={() => act(ext.enabled ? "disable" : "enable", ext.reference)} />
+                  <ExtensionCard ext={ext} busy={busyTarget === ext.reference} onToggle={() => act(ext.enabled ? "disable" : "enable", ext.reference)} onOpen={() => onOpen(ext.reference)} />
                 </Cell>
               ))}
             </Grid>
@@ -171,14 +186,14 @@ function Installed({ scope, cwd, act, busyTarget }: { scope: ScopeName; cwd: str
   );
 }
 
-function ExtensionCard({ ext, busy, onToggle }: { ext: ExtensionInfo; busy: boolean; onToggle: () => void }) {
+function ExtensionCard({ ext, busy, onToggle, onOpen }: { ext: ExtensionInfo; busy: boolean; onToggle: () => void; onOpen: () => void }) {
   const { theme } = useUi();
   const source = ext.source.replace(/^marketplace:/, "");
   return (
-    <Card style={{ gap: 6, paddingVertical: 12, opacity: ext.enabled ? 1 : 0.75 }}>
+    <Card onPress={onOpen} accessibilityLabel={`Manage ${ext.name}`} style={{ gap: 6, paddingVertical: 12, opacity: ext.enabled ? 1 : 0.75 }}>
       <Row gap={10}>
         <View style={{ width: 30, height: 30, borderRadius: 8, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.surface2 }}>
-          <Icon name={ext.builtin ? "Box" : "Puzzle"} size={15} color={ext.enabled ? theme.colors.foreground : theme.colors.foregroundMuted} />
+          <Icon name={ext.name === "deferred" ? "Layers" : ext.builtin ? "Box" : "Puzzle"} size={15} color={ext.enabled ? theme.colors.foreground : theme.colors.foregroundMuted} />
         </View>
         <Stack gap={0} style={{ flex: 1 }}>
           <Row gap={6}>
@@ -192,6 +207,7 @@ function ExtensionCard({ ext, busy, onToggle }: { ext: ExtensionInfo; busy: bool
           </Txt>
         </Stack>
         <Switch value={ext.enabled} busy={busy} label={`${ext.enabled ? "Disable" : "Enable"} ${ext.name}`} onChange={onToggle} />
+        <Icon name="ChevronRight" size={16} color={theme.colors.foregroundMuted} />
       </Row>
     </Card>
   );

@@ -418,3 +418,52 @@ export const RUN_CARD_KIND = "workflow-run";
 export const RUN_CARD_VERSION = 1;
 export const RunCardSchema = z.object({ runId: z.string(), workflow: z.string() });
 export type RunCard = z.infer<typeof RunCardSchema>;
+
+// Extension commands and config files ------------------------------------------------------------
+
+export const ExtensionCommandSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  /** The extension reference, such as `native:@pi-rust-extensions/deferred/deferred`. */
+  extension: z.string(),
+});
+export type ExtensionCommand = z.infer<typeof ExtensionCommandSchema>;
+
+export const extensionCommandsRpc = defineRpc({
+  name: "ext.commands",
+  input: z.object({ cwd: z.string().optional(), refresh: z.boolean().optional() }),
+  output: z.object({ commands: z.array(ExtensionCommandSchema), error: z.string().nullable() }),
+});
+
+export const extensionCommandRunRpc = defineRpc({
+  name: "ext.command.run",
+  input: z.object({ cwd: z.string().optional(), command: z.string().min(1), args: z.string() }),
+  output: z.object({
+    /** pi's answer: `handled` when an extension ran the command. */
+    disposition: z.string(),
+    /** The command started an agent turn; the plugin stops it, since nobody watches this session. */
+    agentInvoked: z.boolean(),
+    output: z.array(z.object({ level: z.string(), text: z.string() })),
+    /** The command asked a question that needs pi's UI. */
+    neededUi: z.boolean(),
+  }),
+});
+
+export const extensionConfigReadRpc = defineRpc({
+  name: "ext.config.read",
+  input: z.object({ name: z.string().min(1), cwd: z.string().optional() }),
+  output: z.object({
+    files: z.array(z.object({ scope: ScopeArg, path: z.string(), exists: z.boolean(), text: z.string() })),
+  }),
+});
+
+export const extensionConfigWriteRpc = defineRpc({
+  name: "ext.config.write",
+  input: z.object({ name: z.string().min(1), scope: ScopeArg, cwd: z.string().optional(), text: z.string() }),
+  output: z.object({ path: z.string() }),
+});
+
+/** The docs page of a marketplace extension. */
+export function extensionDocsUrl(name: string): string {
+  return `https://github.com/yannelli/pi-rust-extensions/tree/main/extensions/${encodeURIComponent(name)}#readme`;
+}

@@ -10,6 +10,10 @@ import {
   extensionsInfoRpc,
   extensionsListRpc,
   extensionsRunRpc,
+  extensionCommandRunRpc,
+  extensionCommandsRpc,
+  extensionConfigReadRpc,
+  extensionConfigWriteRpc,
   extensionsSearchRpc,
   modelsRpc,
   overviewRpc,
@@ -55,6 +59,8 @@ import {
 import { agentDir, piBinary, piVersion } from "./pi";
 import { activeCounts, controlRun, getRun, listRuns, runFiles, runOutput, startRunRpc, steerRun, workflowsExtension } from "./runs";
 import { agentStatus, statusSummary, stopTask, taskLog } from "./status";
+import { deferredConfig, deferredOptions, deferredSet, extensionCommands, readExtensionConfig, runExtensionCommand, writeExtensionConfig } from "./extensions";
+import { deferredConfigRpc, deferredOptionsRpc, deferredSetRpc } from "../shared/deferred";
 import { dirInfo } from "./where";
 import { agentStatusRpc, statusSummaryRpc, taskLogRpc, taskStopRpc } from "../shared/status";
 import { catalog, deleteWorkflow, draftWorkflow, getWorkflow, listWorkflows, saveWorkflowRpc } from "./workflows";
@@ -132,6 +138,13 @@ export function registerHandlers(server: PluginServerContext, remember: (paseo: 
   handle(extensionsSearchRpc, searchExtensions);
   handle(extensionsInfoRpc, extensionInfo);
   handle(extensionsRunRpc, runExtension);
+  handle(extensionCommandsRpc, extensionCommands);
+  handle(extensionCommandRunRpc, runExtensionCommand);
+  handle(extensionConfigReadRpc, readExtensionConfig);
+  handle(extensionConfigWriteRpc, writeExtensionConfig);
+  handle(deferredConfigRpc, deferredConfig);
+  handle(deferredSetRpc, deferredSet);
+  handle(deferredOptionsRpc, deferredOptions);
 
   handle(workflowsListRpc, listWorkflows);
   handle(workflowGetRpc, getWorkflow);

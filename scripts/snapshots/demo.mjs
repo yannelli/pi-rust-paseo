@@ -127,6 +127,7 @@ export function setup() {
   write(real(`${MAIN}/README.md`), "# acme-api\n");
   git(real(MAIN), "add", ".");
   git(real(MAIN), "commit", "-q", "-m", "init");
+  git(real(MAIN), "remote", "add", "origin", "git@github.com:acme/acme-api.git");
   fs.mkdirSync(path.dirname(real(WORKTREE)), { recursive: true });
   fs.mkdirSync(path.dirname(real(WORKTREE2)), { recursive: true });
   git(real(MAIN), "worktree", "add", "-q", "-b", "feat/rate-limits", real(WORKTREE));
@@ -135,6 +136,34 @@ export function setup() {
   write(real(`${WORKTREE}/README.md`), "# acme-api\n\nRate limits.\n");
   fs.mkdirSync(real(WEB), { recursive: true });
   git(real(WEB), "init", "-q", "-b", "main");
+
+  // pi settings with deferred rules, as /deferred set writes them.
+  write(path.join(agentDir, "settings.json"), {
+    defaultProvider: "anthropic",
+    defaultModel: "claude-opus-5-5",
+    deferred: {
+      tools: {
+        "mcp__*": "names",
+        "mcp__github__*": "deferred",
+        "mcp__playwright__*": "deferred",
+        web_fetch: "off",
+        bg_run: "names",
+        bg_status: "names",
+        bg_logs: "names",
+        bg_kill: "names",
+        todo: "names",
+        subagent: "names",
+        read: "on",
+        bash: "on",
+      },
+      skills: { "*": "names", commit: "on", "release-*": "user" },
+      context: { "docs/AGENTS.md": "deferred" },
+      sections: { mcp_servers: "names" },
+      repos: { "acme/acme-api": { tools: { "mcp__github__delete_repo": "off" }, skills: { "deploy-prod": "user" } } },
+      auto: 10,
+      maxResults: 5,
+    },
+  });
 
   // Workflows: three global, one in the main checkout (not committed), one in the worktree.
   const definitions = path.join(agentDir, "ext", "workflows", "definitions");
@@ -441,6 +470,32 @@ export function fixtures(now = Date.now()) {
       models: ["anthropic/claude-opus-5-5", "anthropic/claude-haiku-5-5", "openai/gpt-6.1-terra"],
       tools: ["read", "bash", "edit", "write", "grep", "find", "ls"],
       error: null,
+    }),
+    "ext.commands": () => ({
+      commands: [
+        ["deferred", "Browse and change what is deferred, or: [status|reload|reset|set <kind> <pattern> <mode>|unset <kind> <pattern>] [--project|--repo <owner/name>]", "deferred"],
+        ["goal", "Start a guided goal draft", "goal"],
+        ["goal-status", "Show the focused goal, its tasks, and its health", "goal"],
+        ["todos", "Show and change the todo plan", "todo"],
+        ["tasks", "Open the background task manager", "background-tasks"],
+        ["bg-clear", "Remove finished background tasks and their output", "background-tasks"],
+        ["timers", "List heartbeats and schedules", "timers"],
+      ].map(([name, description, ext]) => ({ name, description, extension: `native:@pi-rust-extensions/${ext}/${ext}` })),
+      error: null,
+    }),
+    "ext.command.run": ({ command }) => ({
+      disposition: "handled",
+      agentInvoked: false,
+      neededUi: false,
+      output: [
+        {
+          level: "info",
+          text:
+            command === "deferred"
+              ? "deferred config: setting `deferred`\nauto: extension and MCP tools load as names past 10% of the context window\nrepo: acme/acme-api (origin)\nrules: 21\nlast prompt: 34 tools (12 names, 9 deferred, 1 off), 18 skills (16 names, 1 user), 1 context file deferred\nkept out of the prompt: ~41.2k tokens\nloaded this session: mcp__github__create_pull_request"
+              : `/${command} ran.`,
+        },
+      ],
     }),
     "pi.settings.read": () => ({ path: `${HOME}/.pi/agent/settings.json`, exists: true, text: '{\n  "defaultProvider": "anthropic",\n  "defaultModel": "claude-opus-5-5"\n}\n' }),
   };

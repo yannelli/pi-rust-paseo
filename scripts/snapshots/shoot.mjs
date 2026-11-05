@@ -80,6 +80,18 @@ const shots = [
     },
   },
   { name: "extensions", query: { tab: "extensions", cwd: MAIN }, height: 900 },
+  {
+    name: "deferred",
+    query: { tab: "extensions", cwd: WORKTREE },
+    height: 1400,
+    async act(page) {
+      await page.getByLabel("Manage deferred").click();
+      await page.waitForTimeout(1200);
+      await page.getByRole("button", { name: "/deferred status" }).click();
+      await page.waitForTimeout(800);
+      await page.getByPlaceholder("mcp__github__create_issue").fill("mcp__github__delete_repo");
+    },
+  },
   { name: "composer", query: { view: "composer", w: "720" }, width: 720, height: 1040, element: { selector: "#popover", name: "popover" } },
   { name: "mobile-runs", query: { tab: "runs", cwd: WORKTREE, compact: "1" }, compact: true },
   { name: "mobile-composer", query: { view: "composer", compact: "1" }, compact: true },

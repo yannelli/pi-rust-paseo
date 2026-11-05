@@ -6,6 +6,7 @@ A [Paseo](https://paseo.sh) plugin for [Pi Rust](https://github.com/yannelli/pi-
 
 - See pi's version, health, default model, subscription limits, and usage. Update pi, extensions, and model catalogs.
 - Turn extensions on and off, update or remove packages, and install from the marketplace, npm, Git, or a path, globally or for one workspace.
+- Run any extension's commands, edit its config files, and manage deferred's rules for tools, skills, context files, and prompt sections.
 - Create, edit, copy, and delete workflows in a form or as JSON, with the same validation as pi. A model can draft one from a description.
 - Start a run in the current workspace, another workspace, or a new worktree. Watch it live: the step timeline, the agent's output as it writes, reports, and memory.
 - Approve or skip a task that waits, end a wait, message the working agent, stop, resume, and delete runs.
@@ -53,6 +54,16 @@ Switch built-in and installed extensions on or off, update or remove packages, s
 
 ![Extensions as a grid of cards with switches, followed by packages and the marketplace](assets/screenshots/extensions.png)
 
+Tap an extension to manage it:
+
+- **Commands.** Run its slash commands, such as `/deferred status`, `/goal-status`, `/todos`, or `/bg-clear`, and read their output. Each runs in a temporary pi session in the workspace; a command that would start an agent turn is stopped, and questions that need pi's UI are cancelled.
+- **Config files.** Edit `ext/<name>.json` in pi's agent directory and in the workspace's `.pi` folder.
+- **Docs.** Open the extension's README.
+
+**deferred** gets its own manager. It lists every rule from the five places the extension reads (global and workspace `deferred.json`, the global and workspace `deferred` setting, and repo blocks) in the order they apply, with a one-tap mode switch for each: `on`, `names`, `deferred`, `user` (skills), or `off`. Add a rule for tools, skills, context files, or prompt sections, globally, for the workspace, or for the workspace's GitHub repository, with suggestions from pi's skills, MCP servers, and tools. **Check a name** shows which rule decides a tool or skill. It also sets `auto` and `maxResults` and shows `/deferred status`. Rules in `deferred.json` files are read-only, as in pi.
+
+![The deferred manager: status, options, a name check that resolves mcp__github__delete_repo to off by a repo rule, and the tool rules with mode switches](assets/screenshots/deferred.png)
+
 ### Workflows
 
 Each workflow shows as a pipeline: its steps, their models, and markers for approvals, loops, and waits. The editor covers every field of the format: models (or **Ask at run**), thinking, tools, skills, MCP servers, subagent rules, environment, limits, and the task options for waits, repeats, goals, approvals, and skills. New workflows start with `anthropic/claude-opus-5-5` at medium thinking.
@@ -79,7 +90,7 @@ Each pi agent's composer has a **Pi Rust** pill next to Tasks and Subagents; oth
 
 - `/workflow run <name> key=value` starts a run and adds a live card to the agent's timeline; `--worktree[=branch]` runs it in a new worktree. `/workflow approve`, `stop`, `resume`, and `skip` control runs.
 - `/pi-ext install|remove|enable|disable|update <source> [-l]` manages extensions.
-- Paseo agents get the `pi_workflows` and `pi_extensions` tools. An agent that starts a run gets the step reports as a message when the run ends. The tools cannot approve tasks.
+- Paseo agents get the `pi_workflows` and `pi_extensions` tools; `pi_extensions` can also run an extension's command, such as `deferred status`. An agent that starts a run gets the step reports as a message when the run ends. The tools cannot approve tasks.
 
 ## Settings
 

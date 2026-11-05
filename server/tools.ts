@@ -4,6 +4,7 @@ import { z } from "zod";
 import { EXTENSION_ACTIONS } from "../shared/contracts";
 import { isActive, statusLabel } from "../shared/runs";
 import { formatDuration, normalizeWorkflow, parseWorkflow, resolveAskModels, slug, workflowInputs } from "../shared/workflow";
+import { runExtensionCommand } from "./extensions";
 import { extensionCommand, extensionInfo, listExtensions, searchExtensions } from "./manage";
 import { appendRunCard, controlRun, getRun, listRuns, startRun, steerRun } from "./runs";
 import { currentSettings } from "./pi";
@@ -183,15 +184,18 @@ export const extensionsTool = defineAgentTool({
   name: "pi_extensions",
   title: "Pi Rust extensions",
   description:
-    "Manage Pi Rust extensions: list installed extensions and packages, search the marketplace, show details, and install, " +
-    "remove, enable, disable, or update one. Changes apply to new pi sessions; running ones need /reload.",
+    "Manage Pi Rust extensions: list installed extensions and packages, search the marketplace, show details, install, " +
+    "remove, enable, disable, or update one, and run an extension's slash command (such as deferred status) without a model turn. " +
+    "Changes apply to new pi sessions; running ones need /reload.",
   input: z.object({
-    action: z.enum(["list", "search", "info", ...EXTENSION_ACTIONS]),
+    action: z.enum(["list", "search", "info", "command", ...EXTENSION_ACTIONS]),
     target: z
       .string()
       .optional()
       .describe("For install and remove: marketplace:<name>, npm:<package>, git:<url>, or a path. For enable and disable: the reference from list. For info: the marketplace name. For update: the package source"),
     query: z.string().optional().describe("For search"),
+    command: z.string().optional().describe("For command: the slash command name without the slash, such as deferred"),
+    args: z.string().optional().describe("For command: its arguments, such as status"),
     scope: z.enum(["global", "project"]).optional().describe("global (default) or project, the agent's working directory"),
   }),
   async execute(input, { agent }) {
@@ -214,6 +218,14 @@ export const extensionsTool = defineAgentTool({
             ? results.map((r) => `${r.name} (${r.version})${r.installed ? ` [installed: ${r.installed}]` : ""}: ${r.description}`).join("\n")
             : "No marketplace extensions found.",
         );
+      }
+      case "command": {
+        if (!input.command) return text("command needs a command name.", true);
+        const result = await runExtensionCommand({ cwd, command: input.command.replace(/^\//, ""), args: input.args ?? "" });
+        const lines = result.output.map((notice) => (notice.level === "info" ? notice.text : `[${notice.level}] ${notice.text}`));
+        if (result.neededUi) lines.push("(The command asked a question that needs pi's UI; it was cancelled.)");
+        if (result.agentInvoked) lines.push("(The command started an agent turn, which was stopped.)");
+        return text(lines.join("\n\n") || `/${input.command} ran and printed nothing.`);
       }
       case "info": {
         if (!input.target) return text("info needs a target.", true);

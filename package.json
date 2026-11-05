@@ -32,6 +32,7 @@
     "assets/screenshots/overview.png",
     "assets/screenshots/run.png",
     "assets/screenshots/workflows.png",
+    "assets/screenshots/deferred.png",
     "assets/screenshots/composer.png",
     "assets/screenshots/mobile.png",
     "index.client.tsx",
