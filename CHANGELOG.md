@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here. Versions follow [Semantic Versioning](https://semver.org); the release workflow writes new entries from [Conventional Commits](https://www.conventionalcommits.org).
 
+## [0.3.0] - 2026-11-05
+
+### Features
+
+- feat: manage Claude plugins, skills, prompts, and context (c4ee61b)
+
+### Fixes and performance
+
+- fix(ui): keep the chosen tab in view on phones, and wrap notice text (83e34f3)
+
+Changes since v0.2.1.
+
 ## [0.2.1] - 2026-11-05
 
 ### Fixes and performance

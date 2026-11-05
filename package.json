@@ -1,6 +1,6 @@
 {
   "name": "@yannelli/pi-rust-paseo",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Manage Pi Rust, its extensions, and its multi-agent workflows from Paseo",
   "license": "MIT",
   "keywords": [
