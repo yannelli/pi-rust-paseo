@@ -778,6 +778,36 @@ export function BrandMark({ size = 28 }: { size?: number }) {
   );
 }
 
+/**
+ * The host Modal with this plugin's UI context. On iOS and Android the host renders modal
+ * content outside the plugin's React tree and passes on only its own contexts (usePaseo, useRpc,
+ * useWorkspace), so the UI context has to be provided again inside.
+ */
+export function UiModal({
+  title,
+  open,
+  onClose,
+  contentContainerStyle,
+  children,
+}: {
+  title: string;
+  open: boolean;
+  onClose: () => void;
+  contentContainerStyle?: StyleProp<ViewStyle>;
+  children: ReactNode;
+}) {
+  const ui = useUi();
+  return (
+    <Modal title={title} open={open} onOpenChange={(next) => !next && onClose()}>
+      <Modal.Content contentContainerStyle={contentContainerStyle}>
+        <UiProvider theme={ui.theme} compact={ui.compact} navigation={ui.navigation}>
+          {children}
+        </UiProvider>
+      </Modal.Content>
+    </Modal>
+  );
+}
+
 export function ConfirmModal({
   open,
   title,
@@ -798,15 +828,13 @@ export function ConfirmModal({
   onClose: () => void;
 }) {
   return (
-    <Modal title={title} open={open} onOpenChange={(next) => !next && onClose()}>
-      <Modal.Content>
-        <Txt size="sm">{body}</Txt>
-        <Row justify="flex-end">
-          <Button label="Cancel" variant="ghost" onPress={onClose} />
-          <Button label={confirmLabel} variant={danger ? "danger" : "primary"} busy={busy} onPress={onConfirm} />
-        </Row>
-      </Modal.Content>
-    </Modal>
+    <UiModal title={title} open={open} onClose={onClose}>
+      <Txt size="sm">{body}</Txt>
+      <Row justify="flex-end">
+        <Button label="Cancel" variant="ghost" onPress={onClose} />
+        <Button label={confirmLabel} variant={danger ? "danger" : "primary"} busy={busy} onPress={onConfirm} />
+      </Row>
+    </UiModal>
   );
 }
 

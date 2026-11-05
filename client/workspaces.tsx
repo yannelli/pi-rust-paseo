@@ -1,13 +1,13 @@
 // Paseo workspaces as pi sees them: projects with their main checkout and worktrees, the
 // workspace a directory belongs to, and pickers and chips that name it by project and branch.
 import { usePaseo } from "@getpaseo/plugin/client";
-import { Icon, Modal, ScrollView } from "@getpaseo/plugin/client/ui";
+import { Icon, ScrollView } from "@getpaseo/plugin/client/ui";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState, type ReactNode } from "react";
 import { Pressable, View } from "react-native";
 import { dirInfoRpc } from "../shared/contracts";
 import { useRpcQuery } from "./queries";
-import { Badge, Button, Field, Notice, Row, Stack, Txt, shortPath, tint, useUi } from "./ui";
+import { Badge, Button, Field, Notice, Row, Stack, Txt, UiModal, shortPath, tint, useUi } from "./ui";
 
 export type WorkspaceKind = "worktree" | "checkout" | "directory";
 
@@ -313,19 +313,17 @@ export function WorkspacePickerModal({
   onClose: () => void;
 }) {
   return (
-    <Modal title={title} open={open} onOpenChange={(next) => !next && onClose()}>
-      <Modal.Content>
-        <WorkspacePicker
-          value={value}
-          allowNone={allowNone}
-          maxHeight={460}
-          onChange={(dir) => {
-            onChange(dir);
-            onClose();
-          }}
-        />
-      </Modal.Content>
-    </Modal>
+    <UiModal title={title} open={open} onClose={onClose}>
+      <WorkspacePicker
+        value={value}
+        allowNone={allowNone}
+        maxHeight={460}
+        onChange={(dir) => {
+          onChange(dir);
+          onClose();
+        }}
+      />
+    </UiModal>
   );
 }
 

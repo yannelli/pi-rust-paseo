@@ -1,14 +1,14 @@
 // Starts a run of a saved workflow: where it runs (this workspace, another one, or a new
 // worktree), models marked `ask`, the `{{inputs}}`, and background or foreground.
 import { usePaseo, useSettings } from "@getpaseo/plugin/client";
-import { Icon, Modal } from "@getpaseo/plugin/client/ui";
+import { Icon } from "@getpaseo/plugin/client/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Pressable, View } from "react-native";
 import { modelsRpc, pluginSettings, runStartRpc, workflowGetRpc, type ScopeName } from "../shared/contracts";
 import { ASK, askModels, DEFAULT_MODEL, parseWorkflow, workflowInputs, type Workflow } from "../shared/workflow";
 import { useRpcMutation, useRpcQuery } from "./queries";
-import { Badge, Button, Chips, ErrorBox, Field, Row, Spinner, Stack, Toggle, Txt, errorMessage, shortPath, tint, useUi } from "./ui";
+import { Badge, Button, Chips, ErrorBox, Field, Row, Spinner, Stack, Toggle, Txt, UiModal, errorMessage, shortPath, tint, useUi } from "./ui";
 import { WorkspaceChip, WorkspaceNotices, WorkspacePicker, createWorktree, useWorkspaceIndex, type ProjectInfo } from "./workspaces";
 
 const INHERIT = "__inherit";
@@ -324,139 +324,144 @@ export function RunDialog({
   const twoColumns = !compact && inputs.length + asks.length > 0;
 
   return (
-    <Modal title={target ? `Run ${target.name}` : "Run workflow"} open={visible} onOpenChange={(next) => !next && !busy && onClose()}>
-      <Modal.Content contentContainerStyle={{ gap: 22 }}>
-        {definition.isLoading ? <Spinner label="Reading the workflow…" /> : null}
-        {definition.error ? <ErrorBox title="Cannot read the workflow" error={definition.error} /> : null}
-        {parsed && !parsed.ok ? <ErrorBox title="The workflow is not valid" error={parsed.error} /> : null}
-        {workflow ? (
-          <>
-            <Stack gap={8}>
-              <Row gap={6} wrap>
-                <Badge label={target?.source === "project" ? "project" : "global"} icon={target?.source === "project" ? "FolderGit2" : "Globe"} />
-                <Badge label={workflow.mode ?? "fixed"} tone={workflow.mode === "dynamic" ? "accent" : "muted"} />
-                <Badge label={`${workflow.steps.length} step${workflow.steps.length === 1 ? "" : "s"}`} icon="ListOrdered" />
-                {workflow.context && workflow.context !== "handoff" ? <Badge label={`context: ${workflow.context}`} /> : null}
-              </Row>
-              {workflow.description ? (
-                <Txt size="sm" tone="muted" numberOfLines={3}>
-                  {workflow.description}
-                </Txt>
-              ) : null}
-            </Stack>
+    <UiModal
+      title={target ? `Run ${target.name}` : "Run workflow"}
+      open={visible}
+      onClose={() => {
+        if (!busy) onClose();
+      }}
+      contentContainerStyle={{ gap: 22 }}
+    >
+      {definition.isLoading ? <Spinner label="Reading the workflow…" /> : null}
+      {definition.error ? <ErrorBox title="Cannot read the workflow" error={definition.error} /> : null}
+      {parsed && !parsed.ok ? <ErrorBox title="The workflow is not valid" error={parsed.error} /> : null}
+      {workflow ? (
+        <>
+          <Stack gap={8}>
+            <Row gap={6} wrap>
+              <Badge label={target?.source === "project" ? "project" : "global"} icon={target?.source === "project" ? "FolderGit2" : "Globe"} />
+              <Badge label={workflow.mode ?? "fixed"} tone={workflow.mode === "dynamic" ? "accent" : "muted"} />
+              <Badge label={`${workflow.steps.length} step${workflow.steps.length === 1 ? "" : "s"}`} icon="ListOrdered" />
+              {workflow.context && workflow.context !== "handoff" ? <Badge label={`context: ${workflow.context}`} /> : null}
+            </Row>
+            {workflow.description ? (
+              <Txt size="sm" tone="muted" numberOfLines={3}>
+                {workflow.description}
+              </Txt>
+            ) : null}
+          </Stack>
 
-            <Block title="Where" hint="Step agents work in this directory and read its .pi folder.">
-              {cwd ? (
-                <OptionCard icon="MapPin" title="This workspace" subtitle={<WorkspaceChip dir={cwd} open={false} />} selected={where === "here"} onPress={() => setWhere("here")} />
-              ) : null}
-              <OptionCard
-                icon="FolderSearch"
-                title="Another workspace"
-                subtitle={where === "other" && otherDir ? <WorkspaceChip dir={otherDir} open={false} /> : "Pick a workspace or a directory"}
-                selected={where === "other"}
-                onPress={() => setWhere("other")}
-              >
-                <WorkspacePicker value={otherDir} onChange={setOtherDir} maxHeight={260} />
-              </OptionCard>
-              <OptionCard
-                icon="GitBranchPlus"
-                title="New worktree"
-                subtitle={project ? `Branch off ${project.name} in a new Paseo workspace` : "Branch off a project in a new Paseo workspace"}
-                selected={where === "worktree"}
-                onPress={() => setWhere("worktree")}
-              >
-                <ProjectChoice key={contextProject?.id ?? "none"} projects={index.projects} value={project} onChange={setProjectId} />
-                <View style={{ flexDirection: compact ? "column" : "row", gap: 10 }}>
-                  <View style={{ flex: 1 }}>
-                    <Field label="Branch" value={branch} onChangeText={setBranch} placeholder="Paseo names the branch" mono />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Field label="Base" value={base} onChangeText={setBase} placeholder="The project's default branch" mono />
-                  </View>
+          <Block title="Where" hint="Step agents work in this directory and read its .pi folder.">
+            {cwd ? (
+              <OptionCard icon="MapPin" title="This workspace" subtitle={<WorkspaceChip dir={cwd} open={false} />} selected={where === "here"} onPress={() => setWhere("here")} />
+            ) : null}
+            <OptionCard
+              icon="FolderSearch"
+              title="Another workspace"
+              subtitle={where === "other" && otherDir ? <WorkspaceChip dir={otherDir} open={false} /> : "Pick a workspace or a directory"}
+              selected={where === "other"}
+              onPress={() => setWhere("other")}
+            >
+              <WorkspacePicker value={otherDir} onChange={setOtherDir} maxHeight={260} />
+            </OptionCard>
+            <OptionCard
+              icon="GitBranchPlus"
+              title="New worktree"
+              subtitle={project ? `Branch off ${project.name} in a new Paseo workspace` : "Branch off a project in a new Paseo workspace"}
+              selected={where === "worktree"}
+              onPress={() => setWhere("worktree")}
+            >
+              <ProjectChoice key={contextProject?.id ?? "none"} projects={index.projects} value={project} onChange={setProjectId} />
+              <View style={{ flexDirection: compact ? "column" : "row", gap: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Field label="Branch" value={branch} onChangeText={setBranch} placeholder="Paseo names the branch" mono />
                 </View>
-                <Field label="Workspace title" value={title} onChangeText={setTitle} placeholder={`${target?.name ?? "workflow"} run`} />
-              </OptionCard>
-              {where !== "worktree" && runDir ? <WorkspaceNotices cwd={runDir} what="project skills, settings, and extensions" /> : null}
-            </Block>
-
-            <View style={{ flexDirection: twoColumns ? "row" : "column", gap: 22, alignItems: "flex-start" }}>
-              {asks.length > 0 ? (
-                <View style={{ flex: twoColumns ? 1 : undefined, alignSelf: "stretch" }}>
-                  <Block title="Models" hint="The workflow asks for these when it starts. Inherit uses the workflow default, else pi's default model.">
-                    {asks.map((ask) => (
-                      <ModelChoice
-                        key={ask.target}
-                        label={ask.label}
-                        value={models[String(ask.target)] ?? ""}
-                        onChange={(value) => setModels((current) => ({ ...current, [String(ask.target)]: value }))}
-                        suggestions={suggestions}
-                        models={listed}
-                      />
-                    ))}
-                  </Block>
+                <View style={{ flex: 1 }}>
+                  <Field label="Base" value={base} onChangeText={setBase} placeholder="The project's default branch" mono />
                 </View>
-              ) : null}
-              {inputs.length > 0 ? (
-                <View style={{ flex: twoColumns ? 1 : undefined, alignSelf: "stretch" }}>
-                  <Block title="Inputs" hint="Values for the {{placeholders}} of the prompts.">
-                    {inputs.map((name) => (
-                      <Field
-                        key={name}
-                        label={name === "goal" ? "Goal: what must the workflow reach?" : name}
-                        value={values[name] ?? ""}
-                        onChangeText={(text) => setValues((current) => ({ ...current, [name]: text }))}
-                        placeholder={`{{${name}}}`}
-                        multiline
-                        minHeight={64}
-                      />
-                    ))}
-                  </Block>
-                </View>
-              ) : null}
-            </View>
-
-            <Block title="Options">
-              <Toggle
-                label="Run in the background"
-                hint="Background runs keep going when the plugin stops; foreground runs stop as interrupted and can resume."
-                value={runInBackground}
-                onChange={setBackground}
-              />
-            </Block>
-
-            {error ? <ErrorBox title={error.title} error={errorMessage(error.cause)} /> : null}
-
-            <View style={{ borderTopWidth: 1, borderColor: theme.colors.border, paddingTop: 14, flexDirection: compact ? "column" : "row", alignItems: compact ? "stretch" : "center", gap: 10 }}>
-              <View style={{ flex: compact ? undefined : 1 }}>
-                {phase ? (
-                  <Row gap={6}>
-                    <Icon name="LoaderCircle" size={14} color={theme.colors.foregroundMuted} />
-                    <Txt size="sm" tone="muted">
-                      {phase}
-                    </Txt>
-                  </Row>
-                ) : missing.length ? (
-                  <Txt size="xs" tone="muted">
-                    {`Needs ${missing.join(", ")}`}
-                  </Txt>
-                ) : !placeReady ? (
-                  <Txt size="xs" tone="muted">
-                    {where === "worktree" ? "Choose a project." : "Choose where to run."}
-                  </Txt>
-                ) : (
-                  <Txt size="xs" tone="muted" numberOfLines={1}>
-                    {where === "worktree" ? `Runs in a new worktree of ${project?.name ?? "the project"}` : `Runs in ${shortPath(runDir)}`}
-                  </Txt>
-                )}
               </View>
-              <Row gap={8} justify="flex-end">
-                <Button label="Cancel" variant="ghost" disabled={busy} onPress={onClose} />
-                <Button label={where === "worktree" ? "Create and run" : "Run"} icon="Play" variant="primary" busy={busy} disabled={!ready} onPress={() => void submit()} />
-              </Row>
+              <Field label="Workspace title" value={title} onChangeText={setTitle} placeholder={`${target?.name ?? "workflow"} run`} />
+            </OptionCard>
+            {where !== "worktree" && runDir ? <WorkspaceNotices cwd={runDir} what="project skills, settings, and extensions" /> : null}
+          </Block>
+
+          <View style={{ flexDirection: twoColumns ? "row" : "column", gap: 22, alignItems: "flex-start" }}>
+            {asks.length > 0 ? (
+              <View style={{ flex: twoColumns ? 1 : undefined, alignSelf: "stretch" }}>
+                <Block title="Models" hint="The workflow asks for these when it starts. Inherit uses the workflow default, else pi's default model.">
+                  {asks.map((ask) => (
+                    <ModelChoice
+                      key={ask.target}
+                      label={ask.label}
+                      value={models[String(ask.target)] ?? ""}
+                      onChange={(value) => setModels((current) => ({ ...current, [String(ask.target)]: value }))}
+                      suggestions={suggestions}
+                      models={listed}
+                    />
+                  ))}
+                </Block>
+              </View>
+            ) : null}
+            {inputs.length > 0 ? (
+              <View style={{ flex: twoColumns ? 1 : undefined, alignSelf: "stretch" }}>
+                <Block title="Inputs" hint="Values for the {{placeholders}} of the prompts.">
+                  {inputs.map((name) => (
+                    <Field
+                      key={name}
+                      label={name === "goal" ? "Goal: what must the workflow reach?" : name}
+                      value={values[name] ?? ""}
+                      onChangeText={(text) => setValues((current) => ({ ...current, [name]: text }))}
+                      placeholder={`{{${name}}}`}
+                      multiline
+                      minHeight={64}
+                    />
+                  ))}
+                </Block>
+              </View>
+            ) : null}
+          </View>
+
+          <Block title="Options">
+            <Toggle
+              label="Run in the background"
+              hint="Background runs keep going when the plugin stops; foreground runs stop as interrupted and can resume."
+              value={runInBackground}
+              onChange={setBackground}
+            />
+          </Block>
+
+          {error ? <ErrorBox title={error.title} error={errorMessage(error.cause)} /> : null}
+
+          <View style={{ borderTopWidth: 1, borderColor: theme.colors.border, paddingTop: 14, flexDirection: compact ? "column" : "row", alignItems: compact ? "stretch" : "center", gap: 10 }}>
+            <View style={{ flex: compact ? undefined : 1 }}>
+              {phase ? (
+                <Row gap={6}>
+                  <Icon name="LoaderCircle" size={14} color={theme.colors.foregroundMuted} />
+                  <Txt size="sm" tone="muted">
+                    {phase}
+                  </Txt>
+                </Row>
+              ) : missing.length ? (
+                <Txt size="xs" tone="muted">
+                  {`Needs ${missing.join(", ")}`}
+                </Txt>
+              ) : !placeReady ? (
+                <Txt size="xs" tone="muted">
+                  {where === "worktree" ? "Choose a project." : "Choose where to run."}
+                </Txt>
+              ) : (
+                <Txt size="xs" tone="muted" numberOfLines={1}>
+                  {where === "worktree" ? `Runs in a new worktree of ${project?.name ?? "the project"}` : `Runs in ${shortPath(runDir)}`}
+                </Txt>
+              )}
             </View>
-          </>
-        ) : null}
-      </Modal.Content>
-    </Modal>
+            <Row gap={8} justify="flex-end">
+              <Button label="Cancel" variant="ghost" disabled={busy} onPress={onClose} />
+              <Button label={where === "worktree" ? "Create and run" : "Run"} icon="Play" variant="primary" busy={busy} disabled={!ready} onPress={() => void submit()} />
+            </Row>
+          </View>
+        </>
+      ) : null}
+    </UiModal>
   );
 }

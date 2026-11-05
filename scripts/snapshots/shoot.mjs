@@ -111,7 +111,11 @@ async function capture(browser, url, shot) {
   await page.goto(`${url}/?${q({ view: "manager", ...shot.query })}`);
   await page.waitForTimeout(3500);
   if (shot.act) {
-    await shot.act(page);
+    try {
+      await shot.act(page);
+    } catch (error) {
+      throw new Error(`${shot.name}: ${[error.message, ...errors].join("\n")}`);
+    }
     await page.waitForTimeout(1500);
   }
   await page.screenshot({ path: path.join(out, `${shot.name}.png`) });

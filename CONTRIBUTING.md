@@ -60,6 +60,7 @@ Paseo compiles each side from its entry. App code must not import `server/` or N
 - Keep the plugin compatible with pi: the workflow format in `shared/workflow.ts` mirrors `extensions/workflows/src/model.rs` in [pi-rust-extensions](https://github.com/yannelli/pi-rust-extensions), field for field and message for message. Change both together.
 - App code uses React Native primitives only (`View`, `Text`, `Pressable`, `ScrollView`, `TextInput`), takes every color from the theme, and checks `layout.compact`. No HTML elements, `className`, or DOM globals.
 - Use the primitives in `client/ui.tsx` and the workspace helpers in `client/workspaces.tsx` rather than new styles.
+- Open dialogs with `UiModal` from `client/ui.tsx`, not the host `Modal`. On iOS and Android the host renders modal content outside the plugin's React tree, so `useUi` fails inside a plain `Modal`. The screenshot app renders modals the same way, so `npm run snapshots` catches the mistake.
 - Add a test for new behavior in `shared/` or `server/`. Tests must not call a real model provider.
 - Keep comments short, and only where the code cannot say it.
 

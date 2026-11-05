@@ -1,5 +1,5 @@
 // pi extensions: installed (global or per workspace), packages, the marketplace, and installs.
-import { Icon, Modal } from "@getpaseo/plugin/client/ui";
+import { Icon } from "@getpaseo/plugin/client/ui";
 import { useMemo, useState, type ReactNode } from "react";
 import { View } from "react-native";
 import {
@@ -36,6 +36,7 @@ import {
   Switch,
   Toggle,
   Txt,
+  UiModal,
   useUi,
 } from "./ui";
 import { WorkspaceChip, WorkspaceNotices } from "./workspaces";
@@ -328,19 +329,17 @@ function MarketCard({ entry, busy, onInstall, onInfo, scope }: { entry: Marketpl
 function InfoModal({ name, onClose }: { name: string | null; onClose: () => void }) {
   const info = useRpcQuery(extensionsInfoRpc, { name: name ?? "" }, { enabled: Boolean(name), staleTime: 300_000 });
   return (
-    <Modal title={info.data?.title ?? name ?? "Extension"} open={Boolean(name)} onOpenChange={(open) => !open && onClose()}>
-      <Modal.Content>
-        {info.isLoading ? <Spinner /> : null}
-        {info.error ? <ErrorBox error={info.error} /> : null}
-        {info.data ? (
-          <Stack gap={10}>
-            {info.data.description ? <Txt size="sm">{info.data.description}</Txt> : null}
-            {Object.entries(info.data.fields).map(([key, value]) => (
-              <KeyValue key={key} label={key} value={value} mono={key === "Install"} />
-            ))}
-          </Stack>
-        ) : null}
-      </Modal.Content>
-    </Modal>
+    <UiModal title={info.data?.title ?? name ?? "Extension"} open={Boolean(name)} onClose={onClose}>
+      {info.isLoading ? <Spinner /> : null}
+      {info.error ? <ErrorBox error={info.error} /> : null}
+      {info.data ? (
+        <Stack gap={10}>
+          {info.data.description ? <Txt size="sm">{info.data.description}</Txt> : null}
+          {Object.entries(info.data.fields).map(([key, value]) => (
+            <KeyValue key={key} label={key} value={value} mono={key === "Install"} />
+          ))}
+        </Stack>
+      ) : null}
+    </UiModal>
   );
 }

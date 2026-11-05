@@ -1,7 +1,9 @@
 // @getpaseo/plugin/client/ui for the snapshot app: host components drawn with react-native-web and
 // lucide-react. An unknown Lucide name logs an error, as Paseo would reject it.
 import * as Lucide from "lucide-react";
-import { createElement, type ReactNode } from "react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { createElement, useEffect, useRef, type ReactNode } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { FlatList as RNFlatList, Pressable, ScrollView as RNScrollView, Text, TextInput as RNTextInput, View } from "react-native";
 
 export const ScrollView = RNScrollView;
@@ -29,15 +31,46 @@ export function Icon({ name, icon, size = 16, color = "#888" }: any) {
   return null;
 }
 
+/**
+ * Like Paseo on iOS and Android, the content renders in a React root of its own: it gets the
+ * host's contexts (here the query client) and none of the plugin's.
+ */
 export function Modal({ title, open, onOpenChange, children }: { title: string; open: boolean; onOpenChange: (o: boolean) => void; children: ReactNode }) {
-  if (!open) return null;
+  const mount = useRef<{ root: Root; element: HTMLElement } | null>(null);
+  useEffect(() => {
+    const element = document.body.appendChild(document.createElement("div"));
+    mount.current = { root: createRoot(element), element };
+    return () => {
+      const current = mount.current;
+      mount.current = null;
+      setTimeout(() => {
+        current?.root.unmount();
+        current?.element.remove();
+      });
+    };
+  }, []);
+  useEffect(() => {
+    mount.current?.root.render(
+      open ? (
+        <QueryClientProvider client={(window as any).__queries}>
+          <Sheet title={title} onClose={() => onOpenChange(false)}>
+            {children}
+          </Sheet>
+        </QueryClientProvider>
+      ) : null,
+    );
+  });
+  return null;
+}
+
+function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   const t = (window as any).__theme.colors;
   return (
     <View style={{ position: "fixed" as any, inset: 0, backgroundColor: "rgba(0,0,0,0.55)", alignItems: "center", justifyContent: "center", zIndex: 100 } as any}>
       <View style={{ width: (window as any).__compact ? "100%" : 560, maxHeight: "90%", backgroundColor: t.surface0, borderRadius: 12, borderWidth: 1, borderColor: t.border, overflow: "hidden" }}>
         <View style={{ flexDirection: "row", justifyContent: "space-between", padding: 16, borderBottomWidth: 1, borderColor: t.border }}>
           <Text style={{ color: t.foreground, fontSize: 16, fontWeight: "600" }}>{title}</Text>
-          <Pressable onPress={() => onOpenChange(false)}>
+          <Pressable onPress={onClose}>
             <Text style={{ color: t.foregroundMuted }}>✕</Text>
           </Pressable>
         </View>
