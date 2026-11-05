@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here. Versions follow [Semantic Versioning](https://semver.org); the release workflow writes new entries from [Conventional Commits](https://www.conventionalcommits.org).
 
+## [0.2.0] - 2026-11-05
+
+### Features
+
+- feat(extensions): manage deferred and run extension commands from Paseo (f2dc09b)
+
+Changes since v0.1.1.
+
 ## [0.1.1] - 2026-11-05
 
 ### Fixes and performance
