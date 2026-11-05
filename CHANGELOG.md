@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here. Versions follow [Semantic Versioning](https://semver.org); the release workflow writes new entries from [Conventional Commits](https://www.conventionalcommits.org).
 
+## [0.2.1] - 2026-11-05
+
+### Fixes and performance
+
+- fix: keep the UI context in dialogs on iOS and Android (2534de6)
+
+Changes since v0.2.0.
+
 ## [0.2.0] - 2026-11-05
 
 ### Features
