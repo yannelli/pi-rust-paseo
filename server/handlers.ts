@@ -62,6 +62,21 @@ import { agentStatus, statusSummary, stopTask, taskLog } from "./status";
 import { deferredConfig, deferredOptions, deferredSet, extensionCommands, readExtensionConfig, runExtensionCommand, writeExtensionConfig } from "./extensions";
 import { deferredConfigRpc, deferredOptionsRpc, deferredSetRpc } from "../shared/deferred";
 import { dirInfo } from "./where";
+import { claudeRunRpc, claudeStateRpc } from "../shared/claude";
+import { claudeRun, claudeState } from "./claude";
+import {
+  contextRpc,
+  fileDeleteRpc,
+  fileWriteRpc,
+  promptCreateRpc,
+  promptsRpc,
+  resourceReadRpc,
+  resourceToggleRpc,
+  skillCreateRpc,
+  skillDeleteRpc,
+  skillsRpc,
+} from "../shared/resources";
+import { context, createPrompt, createSkill, deleteFile, deleteSkill, prompts, readResource, skills, toggleResource, writeFile } from "./resources";
 import { agentStatusRpc, statusSummaryRpc, taskLogRpc, taskStopRpc } from "../shared/status";
 import { catalog, deleteWorkflow, draftWorkflow, getWorkflow, listWorkflows, saveWorkflowRpc } from "./workflows";
 
@@ -145,6 +160,19 @@ export function registerHandlers(server: PluginServerContext, remember: (paseo: 
   handle(deferredConfigRpc, deferredConfig);
   handle(deferredSetRpc, deferredSet);
   handle(deferredOptionsRpc, deferredOptions);
+
+  handle(contextRpc, context);
+  handle(skillsRpc, skills);
+  handle(promptsRpc, prompts);
+  handle(resourceToggleRpc, toggleResource);
+  handle(skillCreateRpc, createSkill);
+  handle(skillDeleteRpc, deleteSkill);
+  handle(promptCreateRpc, createPrompt);
+  handle(resourceReadRpc, readResource);
+  handle(fileWriteRpc, writeFile);
+  handle(fileDeleteRpc, deleteFile);
+  handle(claudeStateRpc, claudeState);
+  handle(claudeRunRpc, claudeRun);
 
   handle(workflowsListRpc, listWorkflows);
   handle(workflowGetRpc, getWorkflow);

@@ -16,7 +16,9 @@ export function startServer(demo, { bundle, port = 0 }) {
   const build = path.join(repo, ".test-build");
   const pi = require(`${build}/server/pi.js`);
   const { pluginSettings } = require(`${build}/shared/contracts.js`);
-  pi.applySettings({ ...pluginSettings.schema.parse({}), agentDir: demo.agentDir });
+  // The demo's home directory and a pi that lists no commands, so nothing from this machine shows.
+  process.env.HOME = demo.root + HOME;
+  pi.applySettings({ ...pluginSettings.schema.parse({}), agentDir: demo.agentDir, piPath: demo.fakePi });
   const { registerHandlers } = require(`${build}/server/handlers.js`);
   const registry = new Map();
   registerHandlers({ handle: (contract, fn) => registry.set(contract.name, { contract, fn }) }, () => {});
@@ -53,12 +55,16 @@ html, body, #root { margin: 0; min-height: 100%; -webkit-font-smoothing: antiali
       if (fonts[url.pathname]) return send(200, readFileSync(fonts[url.pathname]), "font/woff2");
       if (url.pathname.startsWith("/assets/")) return send(200, readFileSync(path.join(repo, url.pathname)), "image/png");
       if (url.pathname === "/workspaces") return send(200, workspaces);
+      if (url.pathname === "/favicon.ico") return send(204, "", "image/x-icon");
       if (url.pathname !== "/rpc") return send(404, { error: "not found" });
       let body = "";
       for await (const chunk of req) body += chunk;
       const { name, input } = JSON.parse(body);
       const entry = registry.get(name);
-      if (!entry) return send(404, { error: `no rpc ${name}` });
+      if (!entry) {
+        console.error(`no rpc ${name}`);
+        return send(404, { error: `no rpc ${name}` });
+      }
       const parsed = entry.contract.input.parse(input);
       const out = canned[name] ? canned[name](parsed) : toFake(await entry.fn(toReal(parsed), { paseo: demo.paseo }));
       const checked = entry.contract.output.safeParse(out);

@@ -100,14 +100,14 @@ Do not open a public issue. See [SECURITY.md](SECURITY.md).
 
 ## Screenshots
 
-The README images come from `scripts/snapshots`. It renders the plugin's real components with react-native-web against made-up data: a developer called Ada with an `acme-api` repository, two worktrees, demo runs, background tasks, a goal, and a timer. Nothing from your machine appears in them.
+The README images come from `scripts/snapshots`. It renders the plugin's real components with react-native-web against made-up data: a developer called Ada with an `acme-api` repository, two worktrees, demo runs, background tasks, a goal, a timer, skills, context files, and Claude plugins. It uses a home directory and a fake `pi` under a temporary folder, so nothing from your machine appears in them.
 
 ```sh
 npm --prefix scripts/snapshots ci
 npm run snapshots
 ```
 
-It writes `assets/screenshots/*.png` and `assets/hero.png`. It needs Chromium: set `CHROME_PATH`, run `npx playwright install chromium`, or have Google Chrome installed.
+It writes `assets/screenshots/*.png` and `assets/hero.png`; `SHOTS=skills,plugins npm run snapshots` renders only those. A render fails on a console error, an unknown icon, or a failed request. It needs Chromium: set `CHROME_PATH`, run `npx playwright install chromium`, or have Google Chrome installed.
 
 ## Releases
 

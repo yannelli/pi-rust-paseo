@@ -6,13 +6,16 @@ import { useEffect, useState } from "react";
 import { Pressable, View } from "react-native";
 import { overviewRpc, runsListRpc } from "../shared/contracts";
 import { isActive } from "../shared/runs";
+import { ContextTab } from "./context";
 import { ExtensionsTab } from "./extensions";
 import { lastCwd, rememberCwd, type ManagerTab } from "./host";
 import { OverviewTab } from "./overview";
+import { PluginsTab } from "./plugins";
 import { useRpcQuery } from "./queries";
 import { RunView } from "./run-view";
 import { RunsList } from "./runs";
 import { SessionsTab } from "./sessions";
+import { SkillsTab } from "./skills";
 import { Badge, BrandMark, Row, Stack, TabBar, Txt, UiProvider, shortPath, useUi, type Navigation } from "./ui";
 import { WorkflowsTab } from "./workflows";
 import { kindIcon, useWorkspaceIndex, WorkspaceChip, WorkspacePickerModal } from "./workspaces";
@@ -20,6 +23,9 @@ import { kindIcon, useWorkspaceIndex, WorkspaceChip, WorkspacePickerModal } from
 const TABS: readonly { id: ManagerTab; label: string; icon: string }[] = [
   { id: "overview", label: "Overview", icon: "LayoutDashboard" },
   { id: "extensions", label: "Extensions", icon: "Puzzle" },
+  { id: "plugins", label: "Claude plugins", icon: "Store" },
+  { id: "skills", label: "Skills", icon: "Sparkles" },
+  { id: "context", label: "Context", icon: "ScrollText" },
   { id: "workflows", label: "Workflows", icon: "Workflow" },
   { id: "runs", label: "Runs", icon: "Activity" },
   { id: "sessions", label: "Sessions", icon: "History" },
@@ -146,7 +152,10 @@ function Manager({ params }: { params: Record<string, string> }) {
         />
         <Stack gap={16}>
           {tab === "overview" ? <OverviewTab cwd={cwd} onNavigate={setTab} /> : null}
-          {tab === "extensions" ? <ExtensionsTab cwd={cwd} /> : null}
+          {tab === "extensions" ? <ExtensionsTab cwd={cwd} onNavigate={setTab} /> : null}
+          {tab === "plugins" ? <PluginsTab cwd={cwd} /> : null}
+          {tab === "skills" ? <SkillsTab cwd={cwd} onOpenPlugins={() => setTab("plugins")} /> : null}
+          {tab === "context" ? <ContextTab cwd={cwd} /> : null}
           {tab === "workflows" ? <WorkflowsTab cwd={cwd} onOpenRun={openRun} initialEdit={edit} /> : null}
           {tab === "runs" ? run ? <RunView id={run} onBack={() => setRun(null)} /> : <RunsList cwd={cwd || undefined} scopeToggle onOpen={setRun} /> : null}
           {tab === "sessions" ? <SessionsTab cwd={cwd} /> : null}

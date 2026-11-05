@@ -47,6 +47,15 @@ function needsTrust(cwd: string): boolean {
 export function projectTrusted(cwd: string): boolean {
   const dir = canonical(cwd);
   if (!needsTrust(dir)) return true;
+  return decision(dir);
+}
+
+/** Whether pi will trust the workspace once it has files that need trust, such as SYSTEM.md. */
+export function trustedOnceNeeded(cwd: string): boolean {
+  return decision(canonical(cwd));
+}
+
+function decision(dir: string): boolean {
   const saved = readJsonSync(path.join(agentDir(), "trust.json"));
   if (saved && typeof saved === "object") {
     const map = saved as Record<string, unknown>;

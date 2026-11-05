@@ -141,6 +141,7 @@ export function setup() {
   write(path.join(agentDir, "settings.json"), {
     defaultProvider: "anthropic",
     defaultModel: "claude-opus-5-5",
+    skills: ["-skills/release-notes/SKILL.md"],
     deferred: {
       tools: {
         "mcp__*": "names",
@@ -164,6 +165,101 @@ export function setup() {
       maxResults: 5,
     },
   });
+
+  // Prompt files and context: a global addendum, global and project AGENTS.md with includes.
+  write(path.join(agentDir, "APPEND_SYSTEM.md"), "## House rules\n\n- Prefer small, reviewed changes.\n- Run the tests before you say a change works.\n");
+  write(path.join(agentDir, "AGENTS.md"), "# Ada's defaults\n\n- Write commit messages in the imperative.\n- Ask before adding a dependency.\n");
+  for (const dir of [MAIN, WORKTREE]) {
+    write(real(`${dir}/AGENTS.md`), "# acme-api\n\nTypeScript service on Express and Postgres.\n\n@docs/architecture.md\n@docs/runbooks/deploy.md\n\n## Testing\n\n- `pnpm test` runs the unit tests.\n");
+    write(real(`${dir}/docs/architecture.md`), "# Architecture\n\nRequests pass auth, rate limits, then the route handlers.\n");
+  }
+
+  // Skills and prompt templates: pi's own, the shared ~/.agents folder, and the worktree's, which Ada trusts.
+  write(path.join(agentDir, "trust.json"), { [fs.realpathSync(real(WORKTREE))]: true });
+  const skill = (dir, name, description, extra = "") => write(path.join(dir, name, "SKILL.md"), `---\nname: ${name}\ndescription: ${description}\n${extra}---\n\n# ${name}\n\nSteps go here.\n`);
+  skill(path.join(agentDir, "skills"), "commit", "Writes a commit message from the staged diff. Use when asked to commit.");
+  skill(path.join(agentDir, "skills"), "release-notes", "Drafts release notes from merged pull requests since the last tag.");
+  skill(path.join(agentDir, "skills"), "deploy-prod", "Deploys the main branch to production after checks pass.", "disable-model-invocation: true\n");
+  skill(real(`${HOME}/.agents/skills`), "design-review", "Reviews a UI change for spacing, contrast, and states. Use for frontend pull requests.");
+  skill(real(`${HOME}/.agents/skills`), "sql-tuning", "Finds slow queries in EXPLAIN output and suggests indexes.");
+  skill(real(`${WORKTREE}/.pi/skills`), "rate-limit-audit", "Checks every public route for a rate limit and a test of it.");
+  write(path.join(agentDir, "prompts", "review.md"), "---\ndescription: Review the staged changes\nargument-hint: \"[focus]\"\n---\n\nReview the staged changes. Focus on $ARGUMENTS.\n");
+  write(path.join(agentDir, "prompts", "standup.md"), "---\ndescription: Summarize yesterday's commits for standup\n---\n\nSummarize my commits since yesterday morning.\n");
+
+  // Claude plugins: two marketplaces, three installed plugins (one off), two available.
+  const claude = path.join(agentDir, "ext", "claude-marketplace");
+  const marketplaces = [
+    {
+      name: "community-plugins",
+      source: "acme-oss/claude-plugins",
+      gitUrl: "https://github.com/acme-oss/claude-plugins.git",
+      description: "Plugins the Acme team maintains for Claude Code.",
+      plugins: [
+        { name: "commit-helper", description: "Commit, push, and open a pull request in one step.", version: "1.4.0", category: "git", installed: true, skills: ["commit-helper-conventional"], commands: ["commit-helper:commit", "commit-helper:commit-push-pr"] },
+        { name: "pr-review", description: "Reviewers for tests, types, comments, and silent failures.", version: "2.1.0", category: "review", installed: true, agents: ["pr-review-test-analyzer", "pr-review-type-checker"], commands: ["pr-review:review"] },
+        { name: "security-hooks", description: "Warns before edits that add injection, unsafe deserialization, or secrets.", version: "0.9.2", category: "security" },
+        { name: "frontend-design", description: "Distinctive, production-grade interfaces with real typography and spacing.", version: "1.0.0", category: "design", remote: true },
+      ],
+    },
+    {
+      name: "acme-internal",
+      source: `${HOME}/code/acme-plugins`,
+      gitUrl: null,
+      description: "Internal deploy and on-call tools.",
+      plugins: [{ name: "deploy-tools", description: "Deploy, roll back, and check service health.", version: "0.3.0", installed: true, enabled: false, mcp: ["plugin_deploy-tools_status"] }],
+    },
+  ];
+  const state = { marketplaces: {}, plugins: {} };
+  const config = { marketplaces: {}, plugins: {} };
+  for (const market of marketplaces) {
+    const rootDir = market.gitUrl ? path.join(claude, "sources", market.name) : real(market.source);
+    write(path.join(rootDir, ".claude-plugin", "marketplace.json"), {
+      name: market.name,
+      description: market.description,
+      owner: { name: "Acme" },
+      plugins: market.plugins.map((plugin) => ({
+        name: plugin.name,
+        description: plugin.description,
+        version: plugin.version,
+        category: plugin.category,
+        source: plugin.remote ? { source: "github", repo: `acme-oss/${plugin.name}` } : `./plugins/${plugin.name}`,
+      })),
+    });
+    state.marketplaces[market.name] = { name: market.name, source: market.gitUrl ? market.source : rootDir, gitUrl: market.gitUrl, root: rootDir, manifest: path.join(rootDir, ".claude-plugin", "marketplace.json") };
+    config.marketplaces[market.name] = { source: market.source, autoUpdate: market.name === "community-plugins" };
+    for (const plugin of market.plugins.filter((entry) => entry.installed)) {
+      const id = `${plugin.name}@${market.name}`;
+      const enabled = plugin.enabled !== false;
+      const files = [];
+      for (const name of plugin.skills ?? []) {
+        const dir = path.join(claude, "resources", "skills", name);
+        write(path.join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: Conventional Commits messages for the staged changes.\n---\n\nSteps.\n`);
+        files.push(dir);
+      }
+      for (const name of plugin.commands ?? []) {
+        const file = path.join(claude, "resources", "prompts", `${name}.md`);
+        write(file, `---\ndescription: ${name.split(":").pop().replace(/-/g, " ")}\n---\n\nDo it.\n`);
+        files.push(file);
+      }
+      for (const name of plugin.agents ?? []) files.push(path.join(agentDir, "ext", "subagents", "agents", `${name}.md`));
+      state.plugins[id] = {
+        plugin: plugin.name,
+        marketplace: market.name,
+        marketplaceScope: "user",
+        version: plugin.version,
+        description: plugin.description,
+        enabled,
+        pluginRoot: path.join(rootDir, "plugins", plugin.name),
+        files: enabled ? files : [],
+        hooks: false,
+        mcpKeys: enabled ? (plugin.mcp ?? []) : plugin.mcp ?? [],
+        unsupported: plugin.name === "pr-review" ? ["outputStyles"] : [],
+      };
+      config.plugins[id] = { enabled };
+    }
+  }
+  write(path.join(claude, "state.json"), state);
+  write(path.join(agentDir, "ext", "claude-marketplace.json"), config);
 
   // Workflows: three global, one in the main checkout (not committed), one in the worktree.
   const definitions = path.join(agentDir, "ext", "workflows", "definitions");
@@ -308,9 +404,28 @@ export function setup() {
     }
   }, 2000);
 
+  // A pi for the RPC probes: it lists no commands and runs nothing else.
+  const fakePi = path.join(root, "bin", "pi");
+  write(fakePi, `#!${process.execPath}
+if (!process.argv.includes("rpc")) process.exit(1);
+let buffer = "";
+process.stdin.on("data", (chunk) => {
+  buffer += chunk;
+  let index;
+  while ((index = buffer.indexOf("\\n")) >= 0) {
+    const message = JSON.parse(buffer.slice(0, index));
+    buffer = buffer.slice(index + 1);
+    console.log(JSON.stringify({ type: "response", id: message.id, success: true, data: message.type === "get_commands" ? { commands: [] } : {} }));
+  }
+});
+process.stdin.on("end", () => process.exit(0));
+`);
+  fs.chmodSync(fakePi, 0o755);
+
   return {
     root,
     agentDir,
+    fakePi,
     paseo,
     cleanup() {
       clearInterval(heartbeat);

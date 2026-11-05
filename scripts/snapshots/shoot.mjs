@@ -81,6 +81,20 @@ const shots = [
   },
   { name: "extensions", query: { tab: "extensions", cwd: MAIN }, height: 900 },
   {
+    name: "plugins",
+    query: { tab: "plugins", cwd: WORKTREE },
+    height: 1240,
+    async act(page) {
+      await page.getByText("pr-review", { exact: true }).first().click();
+    },
+  },
+  {
+    name: "skills",
+    query: { tab: "skills", cwd: WORKTREE },
+    height: 1300,
+  },
+  { name: "context", query: { tab: "context", cwd: WORKTREE }, height: 1300 },
+  {
     name: "deferred",
     query: { tab: "extensions", cwd: WORKTREE },
     height: 1400,
@@ -108,6 +122,9 @@ async function capture(browser, url, shot) {
     if (message.type() === "error") errors.push(message.text());
   });
   page.on("pageerror", (error) => errors.push(error.message));
+  page.on("response", (response) => {
+    if (response.status() >= 400) errors.push(`${response.status()} ${response.url()}`);
+  });
   await page.goto(`${url}/?${q({ view: "manager", ...shot.query })}`);
   await page.waitForTimeout(3500);
   if (shot.act) {
@@ -149,8 +166,8 @@ function heroHtml() {
   .pop img { display: block; width: 340px; }
   </style></head><body><div class="canvas"><div class="grid"></div>
   <div class="copy">${mark}<h1>Pi Rust<br/><span>for Paseo</span></h1>
-  <p>Manage pi, its extensions, and live multi-agent workflows from the Paseo app, on desktop and phone.</p>
-  <div class="chips"><span class="chip">Live workflow runs</span><span class="chip">Approvals</span><span class="chip">Worktrees</span><span class="chip">Background tasks</span><span class="chip">Extensions</span></div></div>
+  <p>Manage pi, its extensions, Claude plugins, skills, context, and live multi-agent workflows from the Paseo app, on desktop and phone.</p>
+  <div class="chips"><span class="chip">Live workflow runs</span><span class="chip">Approvals</span><span class="chip">Worktrees</span><span class="chip">Claude plugins</span><span class="chip">Skills</span><span class="chip">Context</span><span class="chip">Background tasks</span></div></div>
   <div class="window"><div class="bar"><i></i><i></i><i></i></div><img src="/assets/screenshots/run.png"/></div>
   <div class="pop"><img src="/assets/screenshots/popover.png"/></div>
   </div></body></html>`;
@@ -189,7 +206,10 @@ async function main() {
   const browser = await chromium.launch({ executablePath: chromePath() });
   try {
     console.log("Screenshots");
-    for (const shot of shots) await capture(browser, url, shot);
+    // SHOTS=name,name renders only those, and skips the compositions.
+    const only = process.env.SHOTS?.split(",").filter(Boolean);
+    for (const shot of shots.filter((entry) => !only || only.includes(entry.name))) await capture(browser, url, shot);
+    if (only) return;
     console.log("Compositions");
     await compose(browser, url, path.join(out, "mobile.png"), mobileHtml(), { width: 1280, height: 820 });
     await compose(browser, url, path.join(repo, "assets", "hero.png"), heroHtml(), { width: 1280, height: 640 });

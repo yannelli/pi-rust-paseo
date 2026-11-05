@@ -15,6 +15,25 @@ import {
   type ExtensionInfo,
 } from "../shared/contracts";
 import { DeferredManager } from "./deferred";
+import type { ManagerTab } from "./host";
+
+/** Extensions with a tab of their own. */
+const MANAGED_BY_TAB: Record<string, { tab: ManagerTab; label: string; icon: string; title: string; body: string }> = {
+  "claude-marketplace": {
+    tab: "plugins",
+    label: "Claude plugins",
+    icon: "Store",
+    title: "Manage marketplaces and plugins",
+    body: "The Claude plugins tab adds marketplaces, installs plugins, and turns them on and off.",
+  },
+  "context-include": {
+    tab: "context",
+    label: "Context",
+    icon: "ScrollText",
+    title: "See what it includes",
+    body: "The Context tab lists the @path lines of each context file and whether their files exist.",
+  },
+};
 import { useRpcMutation, useRpcQuery } from "./queries";
 import {
   Badge,
@@ -43,13 +62,16 @@ export function ExtensionDetail({
   busy,
   onToggle,
   onBack,
+  onNavigate,
 }: {
   ext: ExtensionInfo;
   cwd: string;
   busy: boolean;
   onToggle: () => void;
   onBack: () => void;
+  onNavigate?: (tab: ManagerTab) => void;
 }) {
+  const manager = MANAGED_BY_TAB[ext.name];
   const { theme, compact } = useUi();
   const marketplace = ext.source.startsWith("marketplace:") ? ext.source.slice("marketplace:".length) : null;
   const info = useRpcQuery(extensionsInfoRpc, { name: marketplace ?? ext.name }, { enabled: Boolean(marketplace), staleTime: 300_000 });
@@ -89,6 +111,11 @@ export function ExtensionDetail({
         {!ext.enabled ? <Notice tone="muted">This extension is off, so pi does not load it and its commands do not run.</Notice> : null}
       </Stack>
       {ext.name === "deferred" ? <DeferredManager cwd={cwd} /> : null}
+      {manager && onNavigate ? (
+        <Notice tone="muted" title={manager.title} action={<Button small variant="primary" icon={manager.icon} label={`Open ${manager.label}`} onPress={() => onNavigate(manager.tab)} />}>
+          {manager.body}
+        </Notice>
+      ) : null}
       <Commands ext={ext} cwd={cwd} />
       <ConfigFiles name={marketplace ?? ext.name} cwd={cwd} />
     </Stack>
@@ -179,7 +206,7 @@ function CommandRow({ command, cwd, first, expanded, onToggle }: { command: Exte
   );
 }
 
-function ConfigFiles({ name, cwd }: { name: string; cwd: string }) {
+export function ConfigFiles({ name, cwd }: { name: string; cwd: string }) {
   const read = useRpcQuery(extensionConfigReadRpc, { name, cwd: cwd || undefined }, { staleTime: 10_000 });
   const files = read.data?.files ?? [];
   return (

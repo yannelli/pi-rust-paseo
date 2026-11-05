@@ -19,24 +19,36 @@ import { projectTrusted } from "./trust";
 
 // Commands --------------------------------------------------------------------------------------
 
-const commandCache = new Map<string, { at: number; commands: ExtensionCommand[] }>();
+/** One entry of pi's `get_commands`: an extension command, a prompt template, or a `skill:` command. */
+export interface PiCommand {
+  name?: string;
+  description?: string;
+  source?: string;
+  sourceInfo?: { path?: string; source?: string; scope?: string };
+}
+
+const commandCache = new Map<string, { at: number; commands: PiCommand[] }>();
 const COMMAND_TTL_MS = 60_000;
 
-async function listCommands(cwd: string, refresh = false): Promise<ExtensionCommand[]> {
+/** pi's commands in `cwd`, from a short-lived pi, cached for a minute. */
+export async function piCommands(cwd: string, refresh = false): Promise<PiCommand[]> {
   const cached = commandCache.get(cwd);
   if (!refresh && cached && Date.now() - cached.at < COMMAND_TTL_MS) return cached.commands;
   const response = await withPiRpc(cwd, (rpc) => rpc.request({ type: "get_commands" }));
-  const raw = ((response.data as { commands?: unknown[] } | undefined)?.commands ?? []) as {
-    name?: string;
-    description?: string;
-    source?: string;
-    sourceInfo?: { path?: string };
-  }[];
-  const commands = raw
-    .filter((command) => command.source === "extension" && command.name && command.sourceInfo?.path && !command.sourceInfo.path.startsWith("builtin:"))
-    .map((command) => ({ name: command.name!, description: command.description ?? "", extension: command.sourceInfo!.path! }));
+  const commands = ((response.data as { commands?: unknown[] } | undefined)?.commands ?? []) as PiCommand[];
   commandCache.set(cwd, { at: Date.now(), commands });
   return commands;
+}
+
+/** Drops the cached command lists, after a change that adds or removes commands, skills, or prompts. */
+export function forgetCommands(): void {
+  commandCache.clear();
+}
+
+async function listCommands(cwd: string, refresh = false): Promise<ExtensionCommand[]> {
+  return (await piCommands(cwd, refresh))
+    .filter((command) => command.source === "extension" && command.name && command.sourceInfo?.path && !command.sourceInfo.path.startsWith("builtin:"))
+    .map((command) => ({ name: command.name!, description: command.description ?? "", extension: command.sourceInfo!.path! }));
 }
 
 export async function extensionCommands({ cwd, refresh }: RpcInput<typeof extensionCommandsRpc>): Promise<RpcOutput<typeof extensionCommandsRpc>> {
@@ -58,28 +70,37 @@ export async function runExtensionCommand({ cwd, command, args }: RpcInput<typeo
   const dir = cwd ?? process.cwd();
   const known = await listCommands(dir);
   if (!known.some((entry) => entry.name === command)) throw new Error(`/${command} is not a command of an installed extension.`);
-  return withPiRpc(dir, async (rpc) => {
-    // Extensions may notify or ask while pi starts; only what follows the command is its output.
-    const firstNotice = rpc.notices.length;
-    const dialogsBefore = rpc.dialogs;
-    const response = await rpc.request({ type: "prompt", message: `/${command}${args.trim() ? ` ${args.trim()}` : ""}` });
-    // A question of the command comes before pi answers it; later ones come from other
-    // extensions reacting to the run, such as hooks asking to run.
-    const neededUi = rpc.dialogs > dialogsBefore;
-    const data = (response.data ?? {}) as { disposition?: string; agentInvoked?: boolean };
-    if (data.agentInvoked) await rpc.request({ type: "abort" });
-    // Extensions may notify just after pi answers; give them a moment.
-    await new Promise((resolve) => setTimeout(resolve, 400));
-    if (response.success === false) {
-      return { disposition: "error", agentInvoked: false, output: [{ level: "error", text: String(response.error ?? "pi refused the command") }], neededUi };
-    }
-    return {
-      disposition: data.disposition ?? "handled",
-      agentInvoked: Boolean(data.agentInvoked),
-      output: rpc.notices.slice(firstNotice).filter((notice) => !SHUTDOWN_NOISE.test(notice.text)),
-      neededUi,
-    };
-  });
+  return runSlash(dir, command, args);
+}
+
+/** Runs `/<command> <args>` in a temporary pi session in `cwd`; see `runExtensionCommand`. */
+export function runSlash(cwd: string, command: string, args: string, timeoutMs?: number): Promise<RpcOutput<typeof extensionCommandRunRpc>> {
+  return withPiRpc(
+    cwd,
+    async (rpc) => {
+      // Extensions may notify or ask while pi starts; only what follows the command is its output.
+      const firstNotice = rpc.notices.length;
+      const dialogsBefore = rpc.dialogs;
+      const response = await rpc.request({ type: "prompt", message: `/${command}${args.trim() ? ` ${args.trim()}` : ""}` });
+      // A question of the command comes before pi answers it; later ones come from other
+      // extensions reacting to the run, such as hooks asking to run.
+      const neededUi = rpc.dialogs > dialogsBefore;
+      const data = (response.data ?? {}) as { disposition?: string; agentInvoked?: boolean };
+      if (data.agentInvoked) await rpc.request({ type: "abort" });
+      // Extensions may notify just after pi answers; give them a moment.
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      if (response.success === false) {
+        return { disposition: "error", agentInvoked: false, output: [{ level: "error", text: String(response.error ?? "pi refused the command") }], neededUi };
+      }
+      return {
+        disposition: data.disposition ?? "handled",
+        agentInvoked: Boolean(data.agentInvoked),
+        output: rpc.notices.slice(firstNotice).filter((notice) => !SHUTDOWN_NOISE.test(notice.text)),
+        neededUi,
+      };
+    },
+    timeoutMs,
+  );
 }
 
 // Config files ----------------------------------------------------------------------------------

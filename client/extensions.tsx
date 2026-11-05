@@ -15,6 +15,7 @@ import {
   type ScopeName,
 } from "../shared/contracts";
 import { ExtensionDetail } from "./extension-detail";
+import type { ManagerTab } from "./host";
 import { useRpcMutation, useRpcQuery } from "./queries";
 import {
   Badge,
@@ -55,7 +56,7 @@ function Cell({ children }: { children: ReactNode }) {
   return <View style={{ flexBasis: compact ? "100%" : "48%", flexGrow: 1, minWidth: compact ? undefined : 300 }}>{children}</View>;
 }
 
-export function ExtensionsTab({ cwd }: { cwd: string }) {
+export function ExtensionsTab({ cwd, onNavigate }: { cwd: string; onNavigate?: (tab: ManagerTab) => void }) {
   const [scope, setScope] = useState<ScopeName>("global");
   const [last, setLast] = useState<{ label: string; result: CommandResult } | null>(null);
   const run = useRpcMutation(extensionsRunRpc, {
@@ -76,6 +77,7 @@ export function ExtensionsTab({ cwd }: { cwd: string }) {
         busy={busyTarget === selectedExt.reference}
         onToggle={() => act(selectedExt.enabled ? "disable" : "enable", selectedExt.reference)}
         onBack={() => setSelected(null)}
+        onNavigate={onNavigate}
       />
     );
   }
