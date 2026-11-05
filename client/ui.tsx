@@ -3,7 +3,7 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { Icon, Modal, ScrollView, TextInput } from "@getpaseo/plugin/client/ui";
 import { createContext, useContext, useEffect, useMemo, useRef, type ReactNode } from "react";
-import { ActivityIndicator, Animated, Pressable, Text, View, type StyleProp, type TextStyle, type ViewStyle } from "react-native";
+import { ActivityIndicator, Animated, Pressable, Text, View, type ScrollView as NativeScrollView, type StyleProp, type TextStyle, type ViewStyle } from "react-native";
 import type { RunStatus } from "../shared/runs";
 
 export interface Navigation {
@@ -583,6 +583,13 @@ export function TabBar<T extends string>({
   onChange: (tab: T) => void;
 }) {
   const { theme, compact } = useUi();
+  // On phones the row scrolls; keep the chosen tab in view.
+  const scroll = useRef<NativeScrollView>(null);
+  const offsets = useRef(new Map<string, number>());
+  const reveal = (x: number | undefined, animated: boolean) => {
+    if (compact && x !== undefined) scroll.current?.scrollTo({ x: Math.max(0, x - 24), animated });
+  };
+  useEffect(() => reveal(offsets.current.get(value), true), [value, compact]);
   const items = tabs.map((tab) => {
     const active = tab.id === value;
     const color = active ? theme.colors.foreground : theme.colors.foregroundMuted;
@@ -593,6 +600,10 @@ export function TabBar<T extends string>({
         accessibilityState={{ selected: active }}
         accessibilityLabel={tab.badge ? `${tab.label}, ${tab.badge}` : tab.label}
         onPress={() => onChange(tab.id)}
+        onLayout={(event) => {
+          offsets.current.set(tab.id, event.nativeEvent.layout.x);
+          if (active) reveal(event.nativeEvent.layout.x, false);
+        }}
         style={({ hovered }: { pressed: boolean; hovered?: boolean }) => ({
           flexDirection: "row",
           alignItems: "center",
@@ -619,7 +630,7 @@ export function TabBar<T extends string>({
     // One scrolling row on phones instead of wrapping onto a second line.
     return (
       <View style={{ borderBottomWidth: 1, borderColor: theme.colors.border }}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 2 }}>
+        <ScrollView ref={scroll} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 2 }}>
           {items}
         </ScrollView>
       </View>
@@ -636,6 +647,12 @@ const NOTICE_ICONS: Record<Tone, string> = {
   warning: "TriangleAlert",
   danger: "CircleAlert",
 };
+
+/** Strings and numbers, alone or as the parts of `{a} b {c}`: React Native needs them inside a Text. */
+function isText(children: ReactNode): boolean {
+  const plain = (child: unknown) => typeof child === "string" || typeof child === "number";
+  return plain(children) || (Array.isArray(children) && children.length > 0 && children.every(plain));
+}
 
 export function Notice({ children, tone = "warning", title, action }: { children?: ReactNode; tone?: Tone; title?: string; action?: ReactNode }) {
   const { theme } = useUi();
@@ -661,7 +678,7 @@ export function Notice({ children, tone = "warning", title, action }: { children
             {title}
           </Txt>
         ) : null}
-        {typeof children === "string" ? (
+        {isText(children) ? (
           <Txt size="sm" tone={title ? "muted" : "default"} selectable>
             {children}
           </Txt>
