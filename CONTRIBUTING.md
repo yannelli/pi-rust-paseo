@@ -119,6 +119,12 @@ Every push to `main` runs the release workflow. It looks at the commits since th
 
 Do not edit the version or the changelog by hand. `npm run release:dry-run` prints the notes of the next release.
 
+When GitHub Actions cannot run, a maintainer can run the same release from a clean, up-to-date `main`:
+
+```sh
+GH_TOKEN="$(gh auth token)" GITHUB_REPOSITORY=yannelli/pi-rust-paseo node scripts/release.mjs --publish
+```
+
 ## License
 
 By contributing, you agree that your contributions are licensed under the [MIT License](LICENSE).
