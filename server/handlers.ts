@@ -63,6 +63,8 @@ import { deferredConfig, deferredOptions, deferredSet, extensionCommands, readEx
 import { deferredConfigRpc, deferredOptionsRpc, deferredSetRpc } from "../shared/deferred";
 import { dirInfo } from "./where";
 import { claudeRunRpc, claudeStateRpc } from "../shared/claude";
+import { routerPolicySaveRpc, routerProfilesSaveRpc, routerRunRpc, routerStateRpc } from "../shared/router";
+import { routerState, runRouter, saveRouterPolicy, saveRouterProfiles } from "./router";
 import { claudeRun, claudeState } from "./claude";
 import {
   contextRpc,
@@ -173,6 +175,10 @@ export function registerHandlers(server: PluginServerContext, remember: (paseo: 
   handle(fileDeleteRpc, deleteFile);
   handle(claudeStateRpc, claudeState);
   handle(claudeRunRpc, claudeRun);
+  handle(routerStateRpc, routerState);
+  handle(routerPolicySaveRpc, saveRouterPolicy);
+  handle(routerProfilesSaveRpc, saveRouterProfiles);
+  handle(routerRunRpc, runRouter);
 
   handle(workflowsListRpc, listWorkflows);
   handle(workflowGetRpc, getWorkflow);

@@ -16,6 +16,7 @@ import { RunView } from "./run-view";
 import { RunsList } from "./runs";
 import { SessionsTab } from "./sessions";
 import { SkillsTab } from "./skills";
+import { SubscriptionsTab } from "./subscriptions";
 import { Badge, BrandMark, Row, Stack, TabBar, Txt, UiProvider, shortPath, useUi, type Navigation } from "./ui";
 import { WorkflowsTab } from "./workflows";
 import { kindIcon, useWorkspaceIndex, WorkspaceChip, WorkspacePickerModal } from "./workspaces";
@@ -23,6 +24,7 @@ import { kindIcon, useWorkspaceIndex, WorkspaceChip, WorkspacePickerModal } from
 const TABS: readonly { id: ManagerTab; label: string; icon: string }[] = [
   { id: "overview", label: "Overview", icon: "LayoutDashboard" },
   { id: "extensions", label: "Extensions", icon: "Puzzle" },
+  { id: "subscriptions", label: "Subscriptions", icon: "Gauge" },
   { id: "plugins", label: "Claude plugins", icon: "Store" },
   { id: "skills", label: "Skills", icon: "Sparkles" },
   { id: "context", label: "Context", icon: "ScrollText" },
@@ -153,6 +155,7 @@ function Manager({ params }: { params: Record<string, string> }) {
         <Stack gap={16}>
           {tab === "overview" ? <OverviewTab cwd={cwd} onNavigate={setTab} /> : null}
           {tab === "extensions" ? <ExtensionsTab cwd={cwd} onNavigate={setTab} /> : null}
+          {tab === "subscriptions" ? <SubscriptionsTab /> : null}
           {tab === "plugins" ? <PluginsTab cwd={cwd} /> : null}
           {tab === "skills" ? <SkillsTab cwd={cwd} onOpenPlugins={() => setTab("plugins")} /> : null}
           {tab === "context" ? <ContextTab cwd={cwd} /> : null}

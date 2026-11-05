@@ -5,7 +5,7 @@ import type { PluginClientContext, PluginScreenParams } from "@getpaseo/plugin/c
 export const SCREEN_ID = "manager";
 export const PANEL_ID = "workflows";
 
-export type ManagerTab = "overview" | "extensions" | "plugins" | "skills" | "context" | "workflows" | "runs" | "sessions";
+export type ManagerTab = "overview" | "extensions" | "subscriptions" | "plugins" | "skills" | "context" | "workflows" | "runs" | "sessions";
 
 /**
  * Params of the manager screen. `tab` picks the tab; `run` opens a run; `edit` (with `scope`)

@@ -2,11 +2,12 @@
 
 # Pi Rust for Paseo
 
-A [Paseo](https://paseo.sh) plugin for [Pi Rust](https://github.com/yannelli/pi-rust). It manages pi, its extensions, Claude Code plugins, skills, prompts, and context, and the multi-agent workflows of the `workflows` extension from the Paseo app, on desktop and on a phone. It works on the same files and commands as pi, so a change in Paseo and a change in pi's own TUI are the same change.
+A [Paseo](https://paseo.sh) plugin for [Pi Rust](https://github.com/yannelli/pi-rust). It manages pi, its extensions, subscription accounts, Claude Code plugins, skills, prompts, and context, and the multi-agent workflows of the `workflows` extension from the Paseo app, on desktop and on a phone. It works on the same files and commands as pi, so a change in Paseo and a change in pi's own TUI are the same change.
 
 - See pi's version, health, default model, subscription limits, and usage. Update pi, extensions, and model catalogs.
 - Turn extensions on and off, update or remove packages, and install from the marketplace, npm, Git, or a path, globally or for one workspace.
 - Run any extension's commands, edit its config files, and manage deferred's rules for tools, skills, context files, and prompt sections.
+- Keep several Claude and Codex subscriptions behind one provider: add and remove accounts, watch their usage, and choose how requests pick an account, fall back to another provider, and spend Codex usage resets.
 - Add Claude Code plugin marketplaces, and install, update, turn off, and uninstall their plugins.
 - See every skill and prompt template pi loads, from every folder, plugin, and package. Turn them on and off, edit them, and create new ones.
 - Edit SYSTEM.md, APPEND_SYSTEM.md, and the AGENTS.md and CLAUDE.md files pi loads for a workspace, and check their `@path` includes.
@@ -39,7 +40,7 @@ paseo plugin add github:yannelli/pi-rust-paseo
 paseo plugin ls pi-rust
 ```
 
-To pin a release, add `--ref` and a tag, for example `--ref v0.3.0`. Plugins run trusted code with the daemon user's access.
+To pin a release, add `--ref` and a tag, for example `--ref v0.4.0`. Plugins run trusted code with the daemon user's access.
 
 The plugin finds pi through its settings, then `$PI_BIN`, then `pi` on the daemon's `PATH`, `~/.local/bin`, or `~/.cargo/bin`. It reads `~/.pi/agent` unless `PI_CODING_AGENT_DIR` or the plugin settings name another directory.
 
@@ -66,6 +67,19 @@ Tap an extension to manage it:
 **deferred** gets its own manager. It lists every rule from the five places the extension reads (global and workspace `deferred.json`, the global and workspace `deferred` setting, and repo blocks) in the order they apply, with a one-tap mode switch for each: `on`, `names`, `deferred`, `user` (skills), or `off`. Add a rule for tools, skills, context files, or prompt sections, globally, for the workspace, or for the workspace's GitHub repository, with suggestions from pi's skills, MCP servers, and tools. **Check a name** shows which rule decides a tool or skill. It also sets `auto` and `maxResults` and shows `/deferred status`. Rules in `deferred.json` files are read-only, as in pi.
 
 ![The deferred manager: status, options, a name check that resolves mcp__github__delete_repo to off by a repo rule, and the tool rules with mode switches](assets/screenshots/deferred.png)
+
+### Subscriptions
+
+The `subscription-router` extension keeps several Claude and Codex subscription accounts behind the `anthropic` and `openai-codex` providers: each model shows once, and the router picks the account of each request. The tab shows each provider's accounts with their 5-hour, weekly, and model windows, and whether pi or the router holds the login.
+
+- **Add account** starts a sign-in on the daemon machine: open the sign-in page, then paste the code Anthropic shows, or the address a Codex sign-in lands on. Remove takes an account out of the router.
+- **Policy**, per provider: `balance` (most quota left for the time left), `fill` (one account until it is full), `threshold` (switch at a percent), or `manual` (one account). Fallback models of other providers for when every account is full, with a switch back when an account has room. For Codex, when to spend banked usage resets, and a wait under which a reset is not worth it.
+- **Banked usage resets** lists each Codex account's resets and spends one on request. Anthropic's saved resets have no API; apply them in claude.ai Settings > Usage.
+- **Router models** edits `router/<name>` models: a chain of models (with an account each, and a thinking level), how they are picked, and whether a route waits for a reset when all are exhausted.
+
+The plugin writes the router's config file and runs `/router` in a temporary pi session for sign-ins, removals, usage reads, and resets. New pi sessions use the changes; running ones after `/reload`. With pi older than the `providerAuth` feature, the router keeps adding `anthropic-2/…` copies of the models, and the tab says so.
+
+![The Subscriptions tab: two Claude accounts, one at its 5-hour limit, the threshold policy with a Codex fallback, two Codex accounts with the fill policy and resets when all are full, and a router model](assets/screenshots/subscriptions.png)
 
 ### Claude plugins
 

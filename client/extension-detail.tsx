@@ -26,6 +26,13 @@ const MANAGED_BY_TAB: Record<string, { tab: ManagerTab; label: string; icon: str
     title: "Manage marketplaces and plugins",
     body: "The Claude plugins tab adds marketplaces, installs plugins, and turns them on and off.",
   },
+  "subscription-router": {
+    tab: "subscriptions",
+    label: "Subscriptions",
+    icon: "Gauge",
+    title: "Manage accounts and policies",
+    body: "The Subscriptions tab adds and removes accounts, shows their usage, and sets how requests pick an account, fall back, and use resets.",
+  },
   "context-include": {
     tab: "context",
     label: "Context",

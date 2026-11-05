@@ -94,6 +94,7 @@ const shots = [
     height: 1300,
   },
   { name: "context", query: { tab: "context", cwd: WORKTREE }, height: 1300 },
+  { name: "subscriptions", query: { tab: "subscriptions", cwd: WORKTREE }, height: 1900 },
   {
     name: "deferred",
     query: { tab: "extensions", cwd: WORKTREE },
@@ -166,8 +167,8 @@ function heroHtml() {
   .pop img { display: block; width: 340px; }
   </style></head><body><div class="canvas"><div class="grid"></div>
   <div class="copy">${mark}<h1>Pi Rust<br/><span>for Paseo</span></h1>
-  <p>Manage pi, its extensions, Claude plugins, skills, context, and live multi-agent workflows from the Paseo app, on desktop and phone.</p>
-  <div class="chips"><span class="chip">Live workflow runs</span><span class="chip">Approvals</span><span class="chip">Worktrees</span><span class="chip">Claude plugins</span><span class="chip">Skills</span><span class="chip">Context</span><span class="chip">Background tasks</span></div></div>
+  <p>Manage pi, its extensions, subscriptions, Claude plugins, skills, context, and live multi-agent workflows from the Paseo app, on desktop and phone.</p>
+  <div class="chips"><span class="chip">Live workflow runs</span><span class="chip">Approvals</span><span class="chip">Worktrees</span><span class="chip">Subscriptions</span><span class="chip">Claude plugins</span><span class="chip">Skills</span><span class="chip">Context</span><span class="chip">Background tasks</span></div></div>
   <div class="window"><div class="bar"><i></i><i></i><i></i></div><img src="/assets/screenshots/run.png"/></div>
   <div class="pop"><img src="/assets/screenshots/popover.png"/></div>
   </div></body></html>`;

@@ -1,13 +1,14 @@
 {
   "id": "pi-rust",
   "name": "Pi Rust",
-  "description": "Manage Pi Rust, its extensions, Claude plugins, skills, prompts, and context, and its multi-agent workflows: install, update, create, run in any workspace or a new worktree, approve, and watch runs live",
+  "description": "Manage Pi Rust, its extensions, subscription accounts, Claude plugins, skills, prompts, and context, and its multi-agent workflows: install, update, create, run in any workspace or a new worktree, approve, and watch runs live",
   "icon": "assets/icon.png",
   "media": [
     "assets/hero.png",
     "assets/screenshots/overview.png",
     "assets/screenshots/run.png",
     "assets/screenshots/workflows.png",
+    "assets/screenshots/subscriptions.png",
     "assets/screenshots/plugins.png",
     "assets/screenshots/skills.png",
     "assets/screenshots/deferred.png",

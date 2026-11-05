@@ -186,6 +186,31 @@ export function setup() {
   write(path.join(agentDir, "prompts", "review.md"), "---\ndescription: Review the staged changes\nargument-hint: \"[focus]\"\n---\n\nReview the staged changes. Focus on $ARGUMENTS.\n");
   write(path.join(agentDir, "prompts", "standup.md"), "---\ndescription: Summarize yesterday's commits for standup\n---\n\nSummarize my commits since yesterday morning.\n");
 
+  // Subscriptions: two Claude accounts (the second at its 5-hour limit) and two Codex accounts,
+  // a threshold policy with a Codex fallback, and a router model.
+  const routerData = path.join(agentDir, "ext", "subscription-router");
+  // pi's logins by provider; the plugin reads only the names.
+  write(path.join(agentDir, "auth.json"), Object.fromEntries(["anthropic", "anthropic-2", "openai-codex", "openai-codex-2"].map((p) => [p, { type: "oauth" }])));
+  write(path.join(routerData, "accounts.json"), { version: 1, accounts: { "anthropic-2": { type: "pi" }, "openai-codex-2": { type: "pi" } } });
+  const usageWindow = (name, used, resetIn, duration, families) => ({ name, usedPercent: used, resetAt: now + resetIn, durationMs: duration, scope: families ? "model" : "provider", ...(families ? { families } : {}) });
+  const snapshot = (provider, tier, windows) => ({ provider, status: "available", windows, tier, retrievedAt: now - 2 * MINUTE, expiresAt: now + 3 * MINUTE });
+  write(path.join(routerData, "usage.json"), {
+    version: 1,
+    snapshots: [
+      snapshot("anthropic", "max", [usageWindow("five_hour", 42, 2.5 * 3_600_000, 18_000_000), usageWindow("seven_day", 63, 3 * 86_400_000, 604_800_000), usageWindow("seven_day_opus", 71, 3 * 86_400_000, 604_800_000, ["opus"])]),
+      snapshot("anthropic-2", "max", [usageWindow("five_hour", 100, 47 * MINUTE, 18_000_000), usageWindow("seven_day", 38, 5 * 86_400_000, 604_800_000)]),
+      snapshot("openai-codex", "pro", [usageWindow("primary", 12, 4 * 3_600_000, 18_000_000), usageWindow("secondary", 55, 4 * 86_400_000, 604_800_000)]),
+      snapshot("openai-codex-2", "plus", [usageWindow("primary", 3, 4.5 * 3_600_000, 18_000_000), usageWindow("secondary", 21, 6 * 86_400_000, 604_800_000)]),
+    ],
+  });
+  write(path.join(agentDir, "ext", "subscription-router.json"), {
+    accounts: {
+      anthropic: { strategy: "threshold", switchAt: 90, fallback: [{ model: "openai-codex/gpt-5.5", thinking: "high" }] },
+      "openai-codex": { strategy: "fill", useResets: "when-all-full" },
+    },
+    profiles: { main: { name: "Router main", strategy: "balanced", chain: [{ model: "anthropic/claude-opus-5-5", account: 2 }, { model: "anthropic/claude-opus-5-5" }, { model: "openai-codex/gpt-5.5", thinking: "high" }], exhaustionPolicy: "wait", maxWaitMinutes: 60 } },
+  });
+
   // Claude plugins: two marketplaces, three installed plugins (one off), two available.
   const claude = path.join(agentDir, "ext", "claude-marketplace");
   const marketplaces = [
@@ -407,6 +432,7 @@ export function setup() {
   // A pi for the RPC probes: it lists no commands and runs nothing else.
   const fakePi = path.join(root, "bin", "pi");
   write(fakePi, `#!${process.execPath}
+if (process.argv.includes("--version")) { console.log("0.12.12"); process.exit(0); }
 if (!process.argv.includes("rpc")) process.exit(1);
 let buffer = "";
 process.stdin.on("data", (chunk) => {
@@ -471,6 +497,7 @@ const extensionNames = [
   ["permissions", false],
   ["statusline", true],
   ["subagents", true],
+  ["subscription-router", true],
   ["timers", true],
   ["todo", true],
   ["web-search", true],
