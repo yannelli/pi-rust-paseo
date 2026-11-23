@@ -55,15 +55,22 @@ export function trustedOnceNeeded(cwd: string): boolean {
   return decision(canonical(cwd));
 }
 
-function decision(dir: string): boolean {
+/** The closest decision saved in `trust.json`, or null. `pi mcp` reads project servers only when it is true. */
+export function savedTrust(cwd: string): boolean | null {
   const saved = readJsonSync(path.join(agentDir(), "trust.json"));
   if (saved && typeof saved === "object") {
     const map = saved as Record<string, unknown>;
-    for (const candidate of ancestors(dir)) {
+    for (const candidate of ancestors(canonical(cwd))) {
       const decision = map[candidate];
       if (typeof decision === "boolean") return decision;
     }
   }
+  return null;
+}
+
+function decision(dir: string): boolean {
+  const saved = savedTrust(dir);
+  if (saved !== null) return saved;
   const settings = readJsonSync(path.join(agentDir(), "settings.json")) as { defaultProjectTrust?: unknown } | null;
   return settings?.defaultProjectTrust === "always";
 }
