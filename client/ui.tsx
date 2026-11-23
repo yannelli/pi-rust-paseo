@@ -394,6 +394,7 @@ export function Field({
   error,
   minHeight,
   autoFocus,
+  secret,
   onSubmit,
 }: {
   label?: string;
@@ -406,6 +407,8 @@ export function Field({
   error?: string | null;
   minHeight?: number;
   autoFocus?: boolean;
+  /** Hides the text, for keys and passwords. */
+  secret?: boolean;
   onSubmit?: () => void;
 }) {
   const { theme } = useUi();
@@ -424,6 +427,7 @@ export function Field({
         placeholderTextColor={theme.colors.foregroundMuted}
         multiline={multiline}
         autoFocus={autoFocus}
+        secureTextEntry={secret}
         autoCapitalize="none"
         autoCorrect={false}
         onSubmitEditing={onSubmit}

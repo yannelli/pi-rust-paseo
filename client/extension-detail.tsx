@@ -1,19 +1,25 @@
 // One extension: its switch, description, docs, commands you can run from Paseo, config files,
 // and, for `deferred`, its rule manager.
-import { openExternalUrl } from "@getpaseo/plugin/client";
+import { openExternalUrl, usePaseo, useRpc } from "@getpaseo/plugin/client";
 import { Icon } from "@getpaseo/plugin/client/ui";
-import { useEffect, useState } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 import {
-  extensionCommandRunRpc,
+  extensionCommandAnswerRpc,
+  extensionCommandStartRpc,
+  extensionCommandStopRpc,
   extensionCommandsRpc,
   extensionConfigReadRpc,
   extensionConfigWriteRpc,
   extensionDocsUrl,
   extensionsInfoRpc,
+  overviewRpc,
+  type CommandStep,
   type ExtensionCommand,
   type ExtensionInfo,
 } from "../shared/contracts";
+import { CommandDialogModal } from "./command-dialog";
 import { DeferredManager } from "./deferred";
 import type { ManagerTab } from "./host";
 
@@ -137,7 +143,7 @@ function Commands({ ext, cwd }: { ext: ExtensionInfo; cwd: string }) {
   return (
     <Section
       title="Commands"
-      description="Run the extension's slash commands here. Each runs in a temporary pi session in this workspace; one that starts an agent turn is stopped, so use it in a pi agent instead."
+      description="Run the extension's slash commands here. Each runs in a temporary pi session in this workspace and asks its questions here. A command that starts an agent turn continues in a new pi agent."
       right={<IconButton icon="RefreshCw" label="Refresh the commands" onPress={() => void list.refetch()} />}
     >
       {list.isLoading ? <Spinner label="Asking pi for its commands" /> : null}
@@ -161,8 +167,31 @@ function Commands({ ext, cwd }: { ext: ExtensionInfo; cwd: string }) {
 function CommandRow({ command, cwd, first, expanded, onToggle }: { command: ExtensionCommand; cwd: string; first: boolean; expanded: boolean; onToggle: () => void }) {
   const { theme } = useUi();
   const [args, setArgs] = useState("");
-  const run = useRpcMutation(extensionCommandRunRpc, { toastErrors: false });
-  const result = run.data;
+  const [ranArgs, setRanArgs] = useState("");
+  const [step, setStep] = useState<CommandStep | null>(null);
+  const start = useRpcMutation(extensionCommandStartRpc, { toastErrors: false, onSuccess: setStep });
+  const answer = useRpcMutation(extensionCommandAnswerRpc, { toastErrors: false, onSuccess: setStep });
+  const stop = useRpc(extensionCommandStopRpc);
+  const waiting = step?.status === "waiting" && !answer.error ? step : null;
+  const result = step?.status === "done" ? step.result : null;
+  const output = step?.status === "waiting" ? step.output : (result?.output ?? []);
+  const busy = start.isPending || answer.isPending || Boolean(waiting);
+  // A command still waiting on a dialog when the screen closes is stopped, with its pi.
+  const session = useRef<string | null>(null);
+  session.current = waiting?.session ?? null;
+  useEffect(
+    () => () => {
+      if (session.current) void stop({ session: session.current }).catch(() => {});
+    },
+    [],
+  );
+  const run = () => {
+    if (busy) return;
+    setStep(null);
+    answer.reset();
+    setRanArgs(args);
+    start.mutate({ cwd: cwd || undefined, command: command.name, args });
+  };
   return (
     <View style={{ borderTopWidth: first ? 0 : 1, borderColor: theme.colors.border }}>
       <Pressable
@@ -184,32 +213,77 @@ function CommandRow({ command, cwd, first, expanded, onToggle }: { command: Exte
         <Stack gap={10} style={{ paddingHorizontal: 12, paddingBottom: 12 }}>
           <Row gap={8} align="flex-start">
             <View style={{ flex: 1 }}>
-              <Field value={args} onChangeText={setArgs} placeholder="arguments" mono onSubmit={() => run.mutate({ cwd: cwd || undefined, command: command.name, args })} />
+              <Field value={args} onChangeText={setArgs} placeholder="arguments" mono onSubmit={run} />
             </View>
-            <Button label="Run" variant="primary" icon="Play" busy={run.isPending} onPress={() => run.mutate({ cwd: cwd || undefined, command: command.name, args })} />
+            <Button label="Run" variant="primary" icon="Play" busy={busy} onPress={run} />
           </Row>
-          {run.error ? <ErrorBox error={run.error} /> : null}
-          {result ? (
+          {start.error ? <ErrorBox error={start.error} /> : null}
+          {answer.error ? <ErrorBox error={answer.error} /> : null}
+          {step ? (
             <Stack gap={8}>
-              {result.output.length ? (
-                result.output.map((notice, index) => (
-                  <Stack key={index} gap={4}>
-                    {notice.level !== "info" ? <Badge label={notice.level} tone={notice.level === "error" ? "danger" : notice.level === "warning" ? "warning" : "muted"} /> : null}
-                    <CodeBlock text={notice.text} maxHeight={360} />
-                  </Stack>
-                ))
-              ) : (
+              {output.map((notice, index) => (
+                <Stack key={index} gap={4}>
+                  {notice.level !== "info" ? <Badge label={notice.level} tone={notice.level === "error" ? "danger" : notice.level === "warning" ? "warning" : "muted"} /> : null}
+                  <CodeBlock text={notice.text} maxHeight={360} />
+                </Stack>
+              ))}
+              {result && !output.length ? (
                 <Txt size="sm" tone="muted">
                   {`/${command.name} ran and printed nothing.`}
                 </Txt>
-              )}
-              {result.neededUi ? <Notice tone="muted">The command asked a question that needs pi's UI; it was cancelled. Run it in a pi agent to answer.</Notice> : null}
-              {result.agentInvoked ? <Notice tone="warning">The command started an agent turn, which was stopped. Run it in a pi agent instead.</Notice> : null}
+              ) : null}
+              {result?.agentInvoked ? <AgentTurn command={command.name} args={ranArgs} cwd={cwd} /> : null}
             </Stack>
           ) : null}
         </Stack>
       ) : null}
+      <CommandDialogModal
+        command={command.name}
+        dialog={waiting?.dialog ?? null}
+        busy={answer.isPending}
+        onAnswer={(dialog, value) => waiting && answer.mutate({ session: waiting.session, dialog, answer: value })}
+      />
     </View>
+  );
+}
+
+/** The `pi/<provider>/<model>` that Paseo needs to create a pi agent on pi's default model. */
+function piAgentProvider(defaults: { provider: string | null; model: string | null } | undefined): string | null {
+  if (!defaults?.model) return null;
+  if (defaults.provider) return `pi/${defaults.provider}/${defaults.model}`;
+  return defaults.model.includes("/") ? `pi/${defaults.model}` : null;
+}
+
+/** The plugin stopped the agent turn the command started; a new pi agent can run the command instead. */
+function AgentTurn({ command, args, cwd }: { command: string; args: string; cwd: string }) {
+  const paseo = usePaseo();
+  const { navigation } = useUi();
+  const overview = useRpcQuery(overviewRpc, { cwd: cwd || undefined }, { staleTime: 30_000 });
+  const provider = piAgentProvider(overview.data?.defaults);
+  const prompt = `/${command}${args.trim() ? ` ${args.trim()}` : ""}`;
+  const create = useMutation({
+    mutationFn: async () => (await paseo.agents.create({ cwd, config: { provider: provider! }, prompt })).id,
+    onSuccess: (agentId) => navigation?.openAgent({ agentId }),
+  });
+  if (create.isSuccess && !navigation) {
+    return <Notice tone="success" title="Created a pi agent">{`It runs ${prompt} in ${shortPath(cwd)}. Open it from that workspace's agents in Paseo.`}</Notice>;
+  }
+  const blocker = !cwd
+    ? "Choose a workspace at the top of the screen to run it in a new pi agent."
+    : overview.data && !provider
+      ? "Set pi's default model on the Overview tab to run it in a new pi agent."
+      : null;
+  return (
+    <Stack gap={8}>
+      <Notice
+        tone="warning"
+        title="The command started an agent turn"
+        action={blocker ? undefined : <Button small variant="primary" icon="Bot" label="Run in a new pi agent" busy={create.isPending} disabled={!provider} onPress={() => create.mutate()} />}
+      >
+        {`This temporary pi session has nobody to watch the turn, so it was stopped. ${blocker ?? `A new pi agent in ${shortPath(cwd)} runs ${prompt} as its first prompt.`}`}
+      </Notice>
+      {create.error ? <ErrorBox error={create.error} title="Could not create the agent" /> : null}
+    </Stack>
   );
 }
 
