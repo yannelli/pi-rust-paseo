@@ -109,7 +109,8 @@ function Manager({ params }: { params: Record<string, string> }) {
     setCwdState(dir);
     rememberCwd(dir);
   };
-  const edit = params.edit ? { name: params.edit, scope: params.scope === "project" ? ("project" as const) : ("global" as const) } : null;
+  const scope = params.scope === "project" ? ("project" as const) : ("global" as const);
+  const edit = params.edit ? { name: params.edit, scope } : null;
   useEffect(() => {
     if (isTab(params.tab)) setTab(params.tab);
     if (params.run) {
@@ -117,8 +118,8 @@ function Manager({ params }: { params: Record<string, string> }) {
       setTab("runs");
     }
     if (params.cwd) setCwd(params.cwd);
-    if (params.edit) setTab("workflows");
-  }, [params.tab, params.run, params.cwd, params.edit]);
+    if (params.edit || params.new) setTab("workflows");
+  }, [params.tab, params.run, params.cwd, params.edit, params.new]);
   const overview = useRpcQuery(overviewRpc, { cwd: cwd || undefined }, { staleTime: 30_000 });
   const counts = useRunCounts();
   const openRun = (id: string) => {
@@ -161,7 +162,7 @@ function Manager({ params }: { params: Record<string, string> }) {
           {tab === "plugins" ? <PluginsTab cwd={cwd} /> : null}
           {tab === "skills" ? <SkillsTab cwd={cwd} onOpenPlugins={() => setTab("plugins")} /> : null}
           {tab === "context" ? <ContextTab cwd={cwd} /> : null}
-          {tab === "workflows" ? <WorkflowsTab cwd={cwd} onOpenRun={openRun} initialEdit={edit} /> : null}
+          {tab === "workflows" ? <WorkflowsTab cwd={cwd} onOpenRun={openRun} initialEdit={edit} initialNew={params.new ? scope : null} /> : null}
           {tab === "runs" ? run ? <RunView id={run} onBack={() => setRun(null)} /> : <RunsList cwd={cwd || undefined} scopeToggle onOpen={setRun} /> : null}
           {tab === "sessions" ? <SessionsTab cwd={cwd} /> : null}
         </Stack>

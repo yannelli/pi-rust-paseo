@@ -70,6 +70,8 @@ test("slash commands tokenize quotes and parse subcommands", () => {
   assert.deepEqual(tokenize(`run ship change="fix the \\"login\\" bug" base='origin/main'`), ["run", "ship", 'change=fix the "login" bug', "base=origin/main"]);
   assert.deepEqual(parseWorkflowCommand(`run ship change="a b" --fg`), { kind: "run", name: "ship", inputs: { change: "a b" }, background: false });
   assert.deepEqual(parseWorkflowCommand(""), { kind: "open" });
+  assert.deepEqual(parseWorkflowCommand("list"), { kind: "open" });
+  assert.deepEqual(parseWorkflowCommand("New"), { kind: "new" });
   assert.deepEqual(parseWorkflowCommand("approve"), { kind: "approve", id: null, decision: "run" });
   assert.deepEqual(parseWorkflowCommand("approve wf-abc skip"), { kind: "approve", id: "wf-abc", decision: "skip" });
   assert.deepEqual(parseWorkflowCommand("stop wf-1"), { kind: "control", action: "stop", id: "wf-1" });

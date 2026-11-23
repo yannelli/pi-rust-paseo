@@ -39,6 +39,8 @@ export interface WorkflowsTabProps {
   onOpenRun: (id: string) => void;
   /** Opens this workflow in the editor on mount. */
   initialEdit?: { name: string; scope: ScopeName } | null;
+  /** Opens the editor on a new workflow saved to this scope on mount. */
+  initialNew?: ScopeName | null;
 }
 
 /** Where a listed workflow is saved: this workspace and global, or the main checkout of a worktree. */
@@ -54,12 +56,17 @@ interface Editing {
   cwd: string;
 }
 
-export function WorkflowsTab({ cwd, agentId, onOpenRun, initialEdit }: WorkflowsTabProps) {
-  const [editing, setEditing] = useState<Editing | null>(initialEdit ? { target: { kind: "edit", ...initialEdit }, cwd } : null);
+export function WorkflowsTab({ cwd, agentId, onOpenRun, initialEdit, initialNew }: WorkflowsTabProps) {
+  const [editing, setEditing] = useState<Editing | null>(
+    initialEdit ? { target: { kind: "edit", ...initialEdit }, cwd } : initialNew ? { target: { kind: "new", scope: initialNew }, cwd } : null,
+  );
   const [running, setRunning] = useState<{ name: string; source: ScopeName; definitionCwd?: string } | null>(null);
   useEffect(() => {
     if (initialEdit) setEditing({ target: { kind: "edit", ...initialEdit }, cwd });
   }, [initialEdit?.name, initialEdit?.scope]);
+  useEffect(() => {
+    if (initialNew) setEditing({ target: { kind: "new", scope: initialNew }, cwd });
+  }, [initialNew]);
 
   if (editing) {
     return (
