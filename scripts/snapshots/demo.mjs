@@ -640,5 +640,34 @@ export function fixtures(now = Date.now()) {
       ],
     }),
     "pi.settings.read": () => ({ path: `${HOME}/.pi/agent/settings.json`, exists: true, text: '{\n  "defaultProvider": "anthropic",\n  "defaultModel": "claude-opus-5-5"\n}\n' }),
+    ...commandDialogs,
   };
 }
+
+// Interactive extension commands: /goal asks for an objective and then starts an agent turn,
+// /bg-clear asks to confirm, /todos offers a choice, and /timers opens an editor. Other commands
+// finish at once.
+const demoDialogs = {
+  goal: { method: "input", title: "What should the goal achieve?", placeholder: "Rate limit the public API per key", timeoutMs: null },
+  "bg-clear": { method: "confirm", title: "Remove finished tasks?", message: "3 finished background tasks and their output files will be deleted.", timeoutMs: 30_000 },
+  todos: { method: "select", title: "Todo plan", options: ["Show the plan", "Add a task", "Mark the current task done", "Clear finished tasks"], timeoutMs: null },
+  timers: { method: "editor", title: "Edit the heartbeat prompt", prefill: "Check the CI run of PR 212 and report failures.\n", timeoutMs: null },
+};
+const commandDialogs = {
+  "ext.command.start": ({ command }) => {
+    const dialog = demoDialogs[command];
+    if (!dialog) return { status: "done", result: { disposition: "handled", agentInvoked: false, neededUi: false, output: [{ level: "info", text: `/${command} ran.` }] } };
+    return {
+      status: "waiting",
+      session: `demo-${command}`,
+      dialog: { id: `dialog-${command}`, message: null, options: [], placeholder: null, prefill: null, secret: false, ...dialog },
+      output: command === "bg-clear" ? [{ level: "info", text: "3 finished, 1 running." }] : [],
+    };
+  },
+  "ext.command.answer": ({ session }) => {
+    const command = session.slice("demo-".length);
+    const text = { goal: "Drafting the goal.", "bg-clear": "Removed 3 finished tasks.", todos: "Plan: 2 of 4 tasks done.", timers: "Saved the heartbeat prompt." }[command] ?? `/${command} ran.`;
+    return { status: "done", result: { disposition: "handled", agentInvoked: command === "goal", neededUi: false, output: [{ level: "info", text }] } };
+  },
+  "ext.command.stop": () => ({ stopped: true }),
+};
