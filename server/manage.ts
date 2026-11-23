@@ -3,6 +3,9 @@
 import path from "node:path";
 import type { RpcInput, RpcOutput } from "@getpaseo/plugin";
 import type {
+  AuthCheck,
+  authCheckRpc,
+  AuthTarget,
   CommandResult,
   defaultsWriteRpc,
   doctorRpc,
@@ -60,6 +63,36 @@ export async function doctor({ cwd }: RpcInput<typeof doctorRpc>): Promise<RpcOu
   } catch (error) {
     return { report: null, error: (error as Error).message };
   }
+}
+
+/** `pi auth check` arguments: read-only (`--no-refresh`), and never `--credentials`. */
+export function authCheckArgs({ provider, model }: AuthTarget): string[] {
+  const args = ["auth", "check"];
+  if (provider) args.push("--provider", provider);
+  if (model) args.push("--model", model);
+  return [...args, "--json", "--no-refresh"];
+}
+
+/** pi exits 0 when ready, 1 when not ready, and 2 when invalid; the JSON answer says which. */
+async function checkTarget(target: AuthTarget): Promise<AuthCheck> {
+  const requested = target.provider ?? target.model ?? "";
+  const result = await runPi(authCheckArgs(target), { timeoutMs: 30_000 });
+  let answer: Record<string, unknown> = {};
+  try {
+    answer = { ...JSON.parse(result.stdout) };
+  } catch {
+    answer = {};
+  }
+  const text = (value: unknown) => (typeof value === "string" ? value : null);
+  if (answer.status === "ready" || answer.status === "not_ready" || answer.status === "invalid") {
+    return { status: answer.status, provider: text(answer.provider) ?? requested, authType: text(answer.authType), reason: text(answer.reason), error: null };
+  }
+  const error = result.stderr.trim().replace(/^Error:\s*/, "") || `pi auth check exited with ${result.code ?? "no code"}${result.timedOut ? " (timed out)" : ""}`;
+  return { status: "failed", provider: requested, authType: null, reason: null, error };
+}
+
+export async function authCheck({ targets }: RpcInput<typeof authCheckRpc>): Promise<RpcOutput<typeof authCheckRpc>> {
+  return { results: await Promise.all(targets.map(checkTarget)) };
 }
 
 export async function update({ target, force }: RpcInput<typeof updateRpc>): Promise<RpcOutput<typeof updateRpc>> {
@@ -176,10 +209,11 @@ export function pruneSessions({ cwd, all, olderThan, dryRun }: RpcInput<typeof s
   return piCommand(args, { cwd, timeoutMs: 120_000 });
 }
 
-export async function stats({ cwd, all }: RpcInput<typeof statsRpc>): Promise<RpcOutput<typeof statsRpc>> {
+export async function stats({ cwd, all, since }: RpcInput<typeof statsRpc>): Promise<RpcOutput<typeof statsRpc>> {
   try {
     const args = ["stats", "--json"];
     if (all) args.push("--all");
+    if (since) args.push("--since", since);
     return { report: await piJson<Record<string, unknown>>(args, { cwd, timeoutMs: 120_000 }), error: null };
   } catch (error) {
     return { report: null, error: (error as Error).message };
