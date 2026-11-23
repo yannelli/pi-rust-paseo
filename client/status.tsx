@@ -204,7 +204,7 @@ function AgentStatus({ agentId, close }: { agentId: string; close: () => void })
   const approvals = (data?.runs ?? []).filter((run) => isActive(run.status) && !run.stale && run.approval);
   const empty = data && data.tasks.length === 0 && data.runs.length === 0 && data.goals.length === 0 && data.timers.length === 0;
   return (
-    <View style={{ width: compact ? undefined : 420, gap: 16 }}>
+    <View style={{ width: compact ? undefined : 420, maxWidth: "100%", gap: 16 }}>
       <Row justify="space-between">
         <Row gap={8}>
           <BrandMark size={18} />
