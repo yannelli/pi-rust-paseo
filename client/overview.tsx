@@ -71,7 +71,7 @@ export function OverviewTab({ cwd, onNavigate }: { cwd: string; onNavigate: (tab
           <Maintenance overview={overview.data} />
         </Stack>
         <Stack gap={16} style={{ flex: 1, alignSelf: "stretch" }}>
-          <Health cwd={cwd} />
+          <Health cwd={cwd} onOpenMcp={() => onNavigate("mcp")} />
           <Limits />
         </Stack>
       </View>
@@ -380,7 +380,7 @@ function Label({ children }: { children: string }) {
   );
 }
 
-function Health({ cwd }: { cwd: string }) {
+function Health({ cwd, onOpenMcp }: { cwd: string; onOpenMcp: () => void }) {
   const doctor = useRpcQuery(doctorRpc, { cwd: cwd || undefined }, { staleTime: 60_000 });
   const report = doctor.data?.report as DoctorReport | null | undefined;
   const problems = report?.problems ?? [];
@@ -462,7 +462,10 @@ function Health({ cwd }: { cwd: string }) {
             {checks.error ? <ErrorBox error={checks.error} /> : null}
           </Stack>
           <Stack gap={6}>
-            <Label>{`MCP servers · ${servers.filter((s) => s.enabled).length} of ${servers.length} on`}</Label>
+            <Row justify="space-between" gap={8}>
+              <Label>{`MCP servers · ${servers.filter((s) => s.enabled).length} of ${servers.length} on`}</Label>
+              <Button small variant="ghost" icon="ArrowRight" label="Manage" onPress={onOpenMcp} />
+            </Row>
             <Row gap={6} wrap>
               {servers.map((server) => (
                 <Badge key={server.name} label={server.name} tone={server.enabled ? "success" : "muted"} icon={server.enabled ? "Plug" : "Unplug"} />
