@@ -449,13 +449,31 @@ async function spawnRunner(dir: string, cwd: string): Promise<void> {
   }
 }
 
-/** A short id that sorts by start time: `wf-` and the time in base 36. */
-async function newRunId(): Promise<string> {
-  let ms = Date.now();
-  for (;;) {
+/** Starts the runner of a run whose active `run.json` is written; when it cannot start, the run fails with the error. */
+async function launchRunner(dir: string, cwd: string, state: RawRun): Promise<void> {
+  try {
+    await spawnRunner(dir, cwd);
+  } catch (error) {
+    const failed: RawRun = { ...state, status: "failed", error: (error as Error).message, endedMs: Date.now() };
+    await writeAtomic(path.join(dir, "run.json"), prettyJson(failed));
+    throw error;
+  }
+}
+
+/**
+ * Reserves a short id that sorts by start time, `wf-` and the time in base 36, by creating its
+ * directory; when another start took this millisecond, it takes the next one.
+ */
+export async function newRunId(): Promise<string> {
+  await fs.mkdir(runsDir(), { recursive: true });
+  for (let ms = Date.now(); ; ms += 1) {
     const id = `wf-${ms.toString(36)}`;
-    if (!(await exists(path.join(runsDir(), id)))) return id;
-    ms += 1;
+    try {
+      await fs.mkdir(path.join(runsDir(), id));
+      return id;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
   }
 }
 
@@ -491,6 +509,7 @@ export async function startRun(request: StartRequest): Promise<string> {
   const missingSkills = [...unknown].filter((name) => !catalog.skills[name]).sort();
   if (missingSkills.length > 0) throw new Error(`unknown skills: ${missingSkills.join(", ")}`);
   if (!(await workflowsExtension()).runner) throw new Error((await workflowsExtension()).error ?? "no runner");
+  const available = workflow.mode === "dynamic" ? await plannerAvailable(cwd, catalog) : undefined;
 
   const id = await newRunId();
   const dir = path.join(runsDir(), id);
@@ -499,7 +518,7 @@ export async function startRun(request: StartRequest): Promise<string> {
   await fs.writeFile(path.join(dir, "plan.schema.json"), PLAN_SCHEMA);
   await fs.writeFile(path.join(dir, "memory.md"), "");
   const now = Date.now();
-  const state = {
+  const state: RawRun = {
     id,
     workflow: normalizeWorkflow(workflow),
     inputs,
@@ -520,13 +539,13 @@ export async function startRun(request: StartRequest): Promise<string> {
     approval: null,
     pi,
     catalog: { skills: catalog.skills, mcpServers: catalog.mcpServers },
-    ...(workflow.mode === "dynamic" ? { available: await plannerAvailable(cwd, catalog) } : {}),
+    ...(available === undefined ? {} : { available }),
   };
   await writeAtomic(path.join(dir, "run.json"), prettyJson(state));
   const link: PaseoLink = { agentId: request.agentId, origin: request.origin };
   await writeAtomic(path.join(dir, PASEO_FILE), prettyJson(link));
   touchLiveness();
-  await spawnRunner(dir, cwd);
+  await launchRunner(dir, cwd, state);
   return id;
 }
 
@@ -561,7 +580,7 @@ export async function resumeRun(id: string): Promise<void> {
   if (raw.workflow?.mode === "dynamic") next.available = await plannerAvailable(cwd, catalog);
   await writeAtomic(path.join(dir, "run.json"), prettyJson(next));
   touchLiveness();
-  await spawnRunner(dir, cwd);
+  await launchRunner(dir, cwd, next);
 }
 
 export async function startRunRpc(
@@ -591,15 +610,20 @@ export async function startRunRpc(
   return { id };
 }
 
+async function postRunCard(paseo: PaseoApi, agentId: string, runId: string, workflow: string): Promise<void> {
+  await paseo.agents.ref(agentId).timeline.append({
+    type: "plugin",
+    id: `run-${runId}`,
+    kind: RUN_CARD_KIND,
+    version: RUN_CARD_VERSION,
+    data: { runId, workflow },
+  });
+}
+
+/** Adds the card of a run that starts; when that fails, the watcher adds it when the run ends. */
 export async function appendRunCard(paseo: PaseoApi, agentId: string, runId: string, workflow: string): Promise<void> {
   try {
-    await paseo.agents.ref(agentId).timeline.append({
-      type: "plugin",
-      id: `run-${runId}`,
-      kind: RUN_CARD_KIND,
-      version: RUN_CARD_VERSION,
-      data: { runId, workflow },
-    });
+    await postRunCard(paseo, agentId, runId, workflow);
   } catch (error) {
     console.error(`cannot add the run card to agent ${agentId}:`, (error as Error).message);
   }
@@ -632,41 +656,110 @@ async function claimReport(dir: string, endedMs: number): Promise<boolean> {
   }
 }
 
+/** Ticks before the watcher gives up on the card or the report of a run end. */
+const DELIVERY_ATTEMPTS = 10;
+
+/** A claimed run end whose card or report has not reached the agent yet. */
+interface Delivery {
+  agentId: string;
+  workflow: string;
+  card: boolean;
+  report: boolean;
+  attempts: number;
+}
+
+interface Watched {
+  /** `run.json` and the link file at the last complete look; unchanged files are skipped. */
+  stamp: string;
+  delivery: Delivery | null;
+}
+
+/** Identifies a version of a file: a rename replaces the inode, and a write changes the time or size. */
+async function fileStamp(file: string): Promise<string> {
+  const stat = await fs.stat(file).catch(() => null);
+  return stat ? `${stat.ino}:${stat.mtimeMs}:${stat.size}` : "-";
+}
+
 /**
- * Watches the runs Paseo started. When one that a Paseo agent started ends, it claims the report
- * and sends it to that agent, as pi reports a run to the agent that started it.
+ * The run watcher's work, one tick at a time. When a run that a Paseo agent started ends, it
+ * claims the report, adds the run card to that agent's timeline, and sends the report to the agent
+ * that started the run, as pi reports a run to the agent that started it. A card or report that
+ * fails is retried on later ticks.
  */
+export function createRunWatcher(getPaseo: () => PaseoApi | null): { tick: () => Promise<void>; watched: () => string[] } {
+  const runs = new Map<string, Watched>();
+
+  const deliver = async (paseo: PaseoApi, id: string, delivery: Delivery): Promise<void> => {
+    try {
+      if (delivery.card) {
+        await postRunCard(paseo, delivery.agentId, id, delivery.workflow);
+        delivery.card = false;
+      }
+      if (delivery.report) {
+        const { run } = await getRun({ id });
+        await paseo.agents.ref(delivery.agentId).send(runReport(run));
+        delivery.report = false;
+      }
+    } catch (error) {
+      delivery.attempts += 1;
+      if (delivery.attempts < DELIVERY_ATTEMPTS) return;
+      const what = delivery.card ? "the run card" : "the report";
+      console.error(`gave up sending ${what} of run ${id} to agent ${delivery.agentId}:`, (error as Error).message);
+    }
+    const watched = runs.get(id);
+    if (watched) watched.delivery = null;
+  };
+
+  const look = async (paseo: PaseoApi, id: string): Promise<void> => {
+    const dir = path.join(runsDir(), id);
+    const stamp = `${await fileStamp(path.join(dir, "run.json"))} ${await fileStamp(path.join(dir, PASEO_FILE))}`;
+    if (runs.get(id)?.stamp === stamp) return;
+    const link = await readJson<PaseoLink>(path.join(dir, PASEO_FILE)).catch(() => null);
+    const raw = link?.agentId ? await readJson<RawRun>(path.join(dir, "run.json")).catch(() => null) : null;
+    if (!link?.agentId || !raw || isActive(raw.status ?? "running") || raw.endedMs == null) {
+      runs.set(id, { stamp, delivery: null });
+      return;
+    }
+    // A live pi that owns the run reports it; look again until it does or goes away.
+    if (raw.owner !== process.pid && (await ownerAlive(raw.owner ?? 0))) return;
+    runs.set(id, { stamp, delivery: null });
+    if (!(await claimReport(dir, raw.endedMs))) return;
+    const delivery: Delivery = {
+      agentId: link.agentId,
+      workflow: raw.workflow?.name ?? id,
+      card: true,
+      report: link.origin === "agent" && currentSettings().reportToAgent,
+      attempts: 0,
+    };
+    runs.set(id, { stamp, delivery });
+    await deliver(paseo, id, delivery);
+  };
+
+  const tick = async (): Promise<void> => {
+    const ids = new Set((await listDir(runsDir())).filter((id) => id.startsWith("wf-")));
+    for (const id of runs.keys()) if (!ids.has(id)) runs.delete(id);
+    const paseo = getPaseo();
+    if (!paseo) return;
+    for (const id of ids) {
+      const delivery = runs.get(id)?.delivery;
+      if (delivery) await deliver(paseo, id, delivery);
+      else await look(paseo, id);
+    }
+  };
+
+  return { tick, watched: () => [...runs.keys()] };
+}
+
+/** Runs the run watcher every few seconds and keeps this plugin's liveness file fresh. */
 export function startWatcher(getPaseo: () => PaseoApi | null): () => void {
-  const checked = new Set<string>();
+  const watcher = createRunWatcher(getPaseo);
   let busy = false;
   const tick = async () => {
     touchLiveness();
     if (busy) return;
     busy = true;
     try {
-      const paseo = getPaseo();
-      for (const id of await listDir(runsDir())) {
-        if (!id.startsWith("wf-")) continue;
-        const dir = path.join(runsDir(), id);
-        const link = await readJson<PaseoLink>(path.join(dir, PASEO_FILE)).catch(() => null);
-        if (!link?.agentId) continue;
-        const raw = await readJson<RawRun>(path.join(dir, "run.json")).catch(() => null);
-        if (!raw || isActive(raw.status ?? "running") || raw.endedMs == null) continue;
-        const key = `${id}:${raw.endedMs}`;
-        if (checked.has(key)) continue;
-        if (!paseo) continue;
-        if (raw.owner !== process.pid && (await ownerAlive(raw.owner ?? 0))) continue;
-        checked.add(key);
-        if (!(await claimReport(dir, raw.endedMs))) continue;
-        await appendRunCard(paseo, link.agentId, id, raw.workflow?.name ?? id);
-        if (link.origin === "agent" && currentSettings().reportToAgent) {
-          const { run } = await getRun({ id });
-          await paseo.agents
-            .ref(link.agentId)
-            .send(runReport(run))
-            .catch((error: Error) => console.error(`cannot report run ${id} to agent ${link.agentId}:`, error.message));
-        }
-      }
+      await watcher.tick();
     } catch (error) {
       console.error("run watcher:", (error as Error).message);
     } finally {
