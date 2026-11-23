@@ -207,7 +207,8 @@ interface CachedRun {
 
 const runCache = new Map<string, CachedRun>();
 
-async function statKey(file: string): Promise<string> {
+/** Identifies a version of a file: a rename replaces the inode, and a write changes the time or size. */
+async function fileStamp(file: string): Promise<string> {
   const stat = await fs.stat(file).catch(() => null);
   return stat ? `${stat.ino}:${stat.mtimeMs}:${stat.size}` : "-";
 }
@@ -215,7 +216,7 @@ async function statKey(file: string): Promise<string> {
 /** A run's summary, read again only when its `run.json` or link file changed. */
 async function cachedSummary(id: string): Promise<RunSummary | null> {
   const dir = runDir(id);
-  const key = (await Promise.all([statKey(path.join(dir, "run.json")), statKey(path.join(dir, PASEO_FILE))])).join("/");
+  const key = (await Promise.all([fileStamp(path.join(dir, "run.json")), fileStamp(path.join(dir, PASEO_FILE))])).join("/");
   let entry = runCache.get(id);
   if (entry?.key !== key) {
     entry = { key, summary: null, heartbeatMs: 0 };
@@ -704,12 +705,6 @@ interface Watched {
   /** `run.json` and the link file at the last complete look; unchanged files are skipped. */
   stamp: string;
   delivery: Delivery | null;
-}
-
-/** Identifies a version of a file: a rename replaces the inode, and a write changes the time or size. */
-async function fileStamp(file: string): Promise<string> {
-  const stat = await fs.stat(file).catch(() => null);
-  return stat ? `${stat.ino}:${stat.mtimeMs}:${stat.size}` : "-";
 }
 
 /**
