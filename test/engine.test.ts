@@ -1,18 +1,22 @@
 // The workflow store and the run engine against a temporary agent directory, a fake pi that
 // answers the RPC catalog requests, and a fake runner that records how it was started.
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { pluginSettings } from "../shared/contracts";
 import { parseWorkflowText, resolveAskModels, type Workflow } from "../shared/workflow";
+import { writeAtomic } from "../server/fsutil";
+import type { PaseoApi } from "../server/paseo";
 import { applySettings } from "../server/pi";
 import {
   approveRun,
+  createRunWatcher,
   deleteRun,
   getRun,
   listRuns,
+  newRunId,
   releaseRuns,
   resumeRun,
   runOutput,
@@ -285,4 +289,90 @@ test("stale, failed, and done runs resume or refuse as pi does", async () => {
   await assert.rejects(resumeRun(id), /is done/);
   await deleteRun(id);
   assert.equal(existsSync(runDir(id)), false);
+});
+
+test("run ids are reserved, so starts in the same millisecond get different ids", async () => {
+  const ids = await Promise.all(Array.from({ length: 5 }, () => newRunId()));
+  assert.equal(new Set(ids).size, 5);
+  for (const id of ids) {
+    assert.ok(existsSync(runDir(id)));
+    rmSync(runDir(id), { recursive: true });
+  }
+});
+
+test("a runner that cannot start fails the run with the error", async () => {
+  const settings = { ...pluginSettings.schema.parse({}), agentDir, piPath: fakePi };
+  applySettings({ ...settings, runnerPath: path.join(root, "bin", "missing-runner") });
+  try {
+    const inputs = { change: "x", base_branch: "main" };
+    await assert.rejects(startRun({ workflow: workflow(), cwd: project, inputs, background: true, origin: "user", agentId: null }), /cannot start the runner/);
+    const id = (await listRuns({ cwd: project })).runs[0].id;
+    const failed = readRunJson(id);
+    assert.equal(failed.status, "failed");
+    assert.match(String(failed.error), /cannot start the runner/);
+    assert.equal(typeof failed.endedMs, "number");
+
+    await assert.rejects(resumeRun(id), /cannot start the runner/);
+    assert.equal(readRunJson(id).status, "failed");
+    await deleteRun(id);
+  } finally {
+    applySettings({ ...settings, runnerPath: fakeRunner });
+  }
+});
+
+test("the watcher retries a failed run card and sends each report once, and forgets deleted runs", async () => {
+  const cards: string[] = [];
+  const reports: string[] = [];
+  let failures = 1;
+  const paseo = {
+    agents: {
+      ref: (agentId: string) => ({
+        timeline: {
+          append: async (item: { id: string }) => {
+            if (failures-- > 0) throw new Error("daemon unavailable");
+            cards.push(`${agentId}:${item.id}`);
+          },
+        },
+        send: async (text: string) => {
+          reports.push(`${agentId}:${text}`);
+        },
+      }),
+    },
+  } as unknown as PaseoApi;
+  const watcher = createRunWatcher(() => paseo);
+  const inputs = { change: "x", base_branch: "main" };
+  const id = await startRun({ workflow: workflow(), cwd: project, inputs, background: true, origin: "agent", agentId: "agent-2" });
+  writeRunJson(id, { status: "done", endedMs: Date.now() });
+
+  await watcher.tick();
+  assert.deepEqual(cards, []);
+  assert.ok(existsSync(path.join(runDir(id), `reported-${readRunJson(id).endedMs}`)));
+  await watcher.tick();
+  await watcher.tick();
+  assert.deepEqual(cards, [`agent-2:run-${id}`]);
+  assert.equal(reports.length, 1);
+  assert.match(reports[0], new RegExp(`^agent-2:Workflow ship-change \\(${id}\\) done`));
+
+  // An unchanged run is not read again, even when its report claim is gone.
+  for (const name of readdirSync(runDir(id))) if (name.startsWith("reported-")) rmSync(path.join(runDir(id), name));
+  await watcher.tick();
+  assert.equal(cards.length, 1);
+
+  assert.ok(watcher.watched().includes(id));
+  await deleteRun(id);
+  await watcher.tick();
+  assert.equal(watcher.watched().includes(id), false);
+});
+
+test("writeAtomic keeps the mode of the file it replaces", async () => {
+  const secret = path.join(root, "modes", "secret.json");
+  await writeAtomic(secret, "{}\n");
+  const defaultMode = statSync(secret).mode & 0o777;
+  chmodSync(secret, 0o600);
+  await writeAtomic(secret, "{ \"a\": 1 }\n");
+  assert.equal(statSync(secret).mode & 0o777, 0o600);
+  assert.equal(readFileSync(secret, "utf8"), '{ "a": 1 }\n');
+  const fresh = path.join(root, "modes", "fresh.json");
+  await writeAtomic(fresh, "{}\n");
+  assert.equal(statSync(fresh).mode & 0o777, defaultMode);
 });

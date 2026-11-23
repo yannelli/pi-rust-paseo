@@ -17,7 +17,7 @@ import { RunsList } from "./runs";
 import { SessionsTab } from "./sessions";
 import { SkillsTab } from "./skills";
 import { SubscriptionsTab } from "./subscriptions";
-import { Badge, BrandMark, Row, Stack, TabBar, Txt, UiProvider, shortPath, useUi, type Navigation } from "./ui";
+import { Badge, BrandMark, FitWidth, Row, Stack, TabBar, Txt, UiProvider, shortPath, useUi, type Navigation } from "./ui";
 import { WorkflowsTab } from "./workflows";
 import { kindIcon, useWorkspaceIndex, WorkspaceChip, WorkspacePickerModal } from "./workspaces";
 
@@ -51,7 +51,9 @@ function runsBadge(counts: { active: number; approvals: number }) {
 export function ManagerScreen({ theme, layout, params, navigation }: PluginScreenProps) {
   return (
     <UiProvider theme={theme} compact={layout.compact} navigation={navigation as Navigation | undefined}>
-      <Manager params={params} />
+      <FitWidth style={{ flex: 1 }}>
+        <Manager params={params} />
+      </FitWidth>
     </UiProvider>
   );
 }
@@ -107,7 +109,8 @@ function Manager({ params }: { params: Record<string, string> }) {
     setCwdState(dir);
     rememberCwd(dir);
   };
-  const edit = params.edit ? { name: params.edit, scope: params.scope === "project" ? ("project" as const) : ("global" as const) } : null;
+  const scope = params.scope === "project" ? ("project" as const) : ("global" as const);
+  const edit = params.edit ? { name: params.edit, scope } : null;
   useEffect(() => {
     if (isTab(params.tab)) setTab(params.tab);
     if (params.run) {
@@ -115,8 +118,8 @@ function Manager({ params }: { params: Record<string, string> }) {
       setTab("runs");
     }
     if (params.cwd) setCwd(params.cwd);
-    if (params.edit) setTab("workflows");
-  }, [params.tab, params.run, params.cwd, params.edit]);
+    if (params.edit || params.new) setTab("workflows");
+  }, [params.tab, params.run, params.cwd, params.edit, params.new]);
   const overview = useRpcQuery(overviewRpc, { cwd: cwd || undefined }, { staleTime: 30_000 });
   const counts = useRunCounts();
   const openRun = (id: string) => {
@@ -159,7 +162,7 @@ function Manager({ params }: { params: Record<string, string> }) {
           {tab === "plugins" ? <PluginsTab cwd={cwd} /> : null}
           {tab === "skills" ? <SkillsTab cwd={cwd} onOpenPlugins={() => setTab("plugins")} /> : null}
           {tab === "context" ? <ContextTab cwd={cwd} /> : null}
-          {tab === "workflows" ? <WorkflowsTab cwd={cwd} onOpenRun={openRun} initialEdit={edit} /> : null}
+          {tab === "workflows" ? <WorkflowsTab cwd={cwd} onOpenRun={openRun} initialEdit={edit} initialNew={params.new ? scope : null} /> : null}
           {tab === "runs" ? run ? <RunView id={run} onBack={() => setRun(null)} /> : <RunsList cwd={cwd || undefined} scopeToggle onOpen={setRun} /> : null}
           {tab === "sessions" ? <SessionsTab cwd={cwd} /> : null}
         </Stack>
@@ -174,7 +177,9 @@ type PanelTab = "workflows" | "runs";
 export function WorkflowsPanel({ theme, layout, workspaceId, navigation }: PluginWorkspacePanelProps) {
   return (
     <UiProvider theme={theme} compact={layout.compact} navigation={navigation as Navigation | undefined}>
-      <Panel workspaceId={workspaceId} />
+      <FitWidth style={{ flex: 1 }}>
+        <Panel workspaceId={workspaceId} />
+      </FitWidth>
     </UiProvider>
   );
 }

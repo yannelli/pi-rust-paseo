@@ -30,7 +30,7 @@ const host = { id: "demo", label: "devbox" };
 const navigation = { openAgent() {}, openWorkspace() {} };
 setClient({ openScreen() {} } as any);
 const params: Record<string, string> = {};
-for (const key of ["tab", "run", "cwd", "edit", "scope"]) if (q.get(key)) params[key] = q.get(key)!;
+for (const key of ["tab", "run", "cwd", "edit", "new", "scope"]) if (q.get(key)) params[key] = q.get(key)!;
 const view = q.get("view") ?? "manager";
 const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 (window as any).__queries = queries;

@@ -9,12 +9,14 @@ export type ManagerTab = "overview" | "extensions" | "subscriptions" | "plugins"
 
 /**
  * Params of the manager screen. `tab` picks the tab; `run` opens a run; `edit` (with `scope`)
- * opens a workflow in the editor; `cwd` sets the project directory.
+ * opens a workflow in the editor; `new` opens the editor on a new workflow saved to `scope`;
+ * `cwd` sets the project directory.
  */
 export interface ManagerParams {
   tab?: ManagerTab;
   run?: string;
   edit?: string;
+  new?: "1";
   scope?: "global" | "project";
   cwd?: string;
 }
