@@ -3,12 +3,14 @@ import path from "node:path";
 
 let next = 0;
 
-/** Writes through a temporary file and a rename, so readers never see a partial file. */
+/** Writes through a temporary file and a rename, so readers never see a partial file. An existing file keeps its mode. */
 export async function writeAtomic(file: string, text: string): Promise<void> {
   await fs.mkdir(path.dirname(file), { recursive: true });
   // The temporary name must not end in `.json`: the runner reads every `*.json` in its queues.
   const tmp = `${file}.${process.pid}-${next++}.tmp`;
+  const existing = await fs.stat(file).catch(() => null);
   await fs.writeFile(tmp, text);
+  if (existing) await fs.chmod(tmp, existing.mode & 0o7777);
   await fs.rename(tmp, file);
 }
 

@@ -1,12 +1,13 @@
 // The workflow store and the run engine against a temporary agent directory, a fake pi that
 // answers the RPC catalog requests, and a fake runner that records how it was started.
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { pluginSettings } from "../shared/contracts";
 import { parseWorkflowText, resolveAskModels, type Workflow } from "../shared/workflow";
+import { writeAtomic } from "../server/fsutil";
 import type { PaseoApi } from "../server/paseo";
 import { applySettings } from "../server/pi";
 import {
@@ -361,4 +362,17 @@ test("the watcher retries a failed run card and sends each report once, and forg
   await deleteRun(id);
   await watcher.tick();
   assert.equal(watcher.watched().includes(id), false);
+});
+
+test("writeAtomic keeps the mode of the file it replaces", async () => {
+  const secret = path.join(root, "modes", "secret.json");
+  await writeAtomic(secret, "{}\n");
+  const defaultMode = statSync(secret).mode & 0o777;
+  chmodSync(secret, 0o600);
+  await writeAtomic(secret, "{ \"a\": 1 }\n");
+  assert.equal(statSync(secret).mode & 0o777, 0o600);
+  assert.equal(readFileSync(secret, "utf8"), '{ "a": 1 }\n');
+  const fresh = path.join(root, "modes", "fresh.json");
+  await writeAtomic(fresh, "{}\n");
+  assert.equal(statSync(fresh).mode & 0o777, defaultMode);
 });
