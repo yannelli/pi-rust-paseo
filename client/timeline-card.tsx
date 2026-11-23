@@ -23,6 +23,13 @@ function live(run: RunDetail): boolean {
   return isActive(run.status) && !run.stale;
 }
 
+/** A live run refreshes often; an ended run slowly, since any client can resume it, unless it is done. */
+function refreshEvery(run: RunDetail | undefined): number | false {
+  if (!run) return false;
+  if (live(run)) return 2000;
+  return run.status === "done" ? false : 10_000;
+}
+
 function Frame({ workflow, right, children }: { workflow: string; right?: ReactNode; children?: ReactNode }) {
   const { theme, compact } = useUi();
   return (
@@ -53,12 +60,7 @@ function RunCardBody({ runId, workflow }: { runId: string; workflow: string }) {
   const query = useRpcQuery(
     runGetRpc,
     { id: runId },
-    {
-      refetchInterval: (state) => {
-        const run = state.state.data?.run;
-        return run && live(run) ? 2000 : false;
-      },
-    },
+    { refetchInterval: (state) => refreshEvery(state.state.data?.run) },
   );
   const run = query.data?.run;
   const active = run ? live(run) : false;
