@@ -435,18 +435,75 @@ export const extensionCommandsRpc = defineRpc({
   output: z.object({ commands: z.array(ExtensionCommandSchema), error: z.string().nullable() }),
 });
 
+const CommandNoticeSchema = z.object({ level: z.string(), text: z.string() });
+
+export const ExtensionCommandResultSchema = z.object({
+  /** pi's answer: `handled` when an extension ran the command. */
+  disposition: z.string(),
+  /** The command started an agent turn; the plugin stops it, since nobody watches this session. */
+  agentInvoked: z.boolean(),
+  output: z.array(CommandNoticeSchema),
+  /** The command asked a question that needs pi's UI. */
+  neededUi: z.boolean(),
+});
+export type ExtensionCommandResult = z.infer<typeof ExtensionCommandResultSchema>;
+
+const ExtensionCommandInput = z.object({ cwd: z.string().optional(), command: z.string().min(1), args: z.string() });
+
+/** Runs a command and cancels its dialogs. */
 export const extensionCommandRunRpc = defineRpc({
   name: "ext.command.run",
-  input: z.object({ cwd: z.string().optional(), command: z.string().min(1), args: z.string() }),
-  output: z.object({
-    /** pi's answer: `handled` when an extension ran the command. */
-    disposition: z.string(),
-    /** The command started an agent turn; the plugin stops it, since nobody watches this session. */
-    agentInvoked: z.boolean(),
-    output: z.array(z.object({ level: z.string(), text: z.string() })),
-    /** The command asked a question that needs pi's UI. */
-    neededUi: z.boolean(),
-  }),
+  input: ExtensionCommandInput,
+  output: ExtensionCommandResultSchema,
+});
+
+/** A dialog an extension command opened, as pi's `extension_ui_request` describes it. */
+export const CommandDialogSchema = z.object({
+  id: z.string(),
+  method: z.enum(["select", "confirm", "input", "editor"]),
+  title: z.string(),
+  /** The question of a confirm. */
+  message: z.string().nullable(),
+  /** The choices of a select. */
+  options: z.array(z.string()),
+  placeholder: z.string().nullable(),
+  prefill: z.string().nullable(),
+  /** An input whose text should not show, such as a key. */
+  secret: z.boolean(),
+  /** Milliseconds until pi stops waiting and the command goes on without an answer; null when it waits. */
+  timeoutMs: z.number().nullable(),
+});
+export type CommandDialog = z.infer<typeof CommandDialogSchema>;
+
+/** Where an interactive command is: waiting on a dialog, with its output so far, or done. */
+export const CommandStepSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("waiting"), session: z.string(), dialog: CommandDialogSchema, output: z.array(CommandNoticeSchema) }),
+  z.object({ status: z.literal("done"), result: ExtensionCommandResultSchema }),
+]);
+export type CommandStep = z.infer<typeof CommandStepSchema>;
+
+/** Runs a command in a pi that stays up while the command waits on a dialog. */
+export const extensionCommandStartRpc = defineRpc({
+  name: "ext.command.start",
+  input: ExtensionCommandInput,
+  output: CommandStepSchema,
+});
+
+export const CommandAnswerSchema = z.union([z.object({ value: z.string() }), z.object({ confirmed: z.boolean() }), z.object({ cancelled: z.literal(true) })]);
+export type CommandAnswer = z.infer<typeof CommandAnswerSchema>;
+
+/** Answers the waiting dialog; an answer to a dialog pi gave up on is dropped. */
+export const extensionCommandAnswerRpc = defineRpc({
+  name: "ext.command.answer",
+  input: z.object({ session: z.string(), dialog: z.string(), answer: CommandAnswerSchema }),
+  output: CommandStepSchema,
+});
+
+/** Stops an interactive command and its pi. */
+export const extensionCommandStopRpc = defineRpc({
+  name: "ext.command.stop",
+  input: z.object({ session: z.string() }),
+  output: z.object({ stopped: z.boolean() }),
 });
 
 export const extensionConfigReadRpc = defineRpc({

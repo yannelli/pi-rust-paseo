@@ -4,11 +4,13 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { before, test } from "node:test";
-import { pluginSettings } from "../shared/contracts";
+import { pluginSettings, type CommandStep } from "../shared/contracts";
 import { canonicalMode, contextMatch, decide, globMatch, modesFor, type Rule } from "../shared/deferred";
 import { applySettings } from "../server/pi";
 import {
+  answerExtensionCommand,
   deferredConfig,
   deferredOptions,
   deferredSet,
@@ -16,6 +18,10 @@ import {
   readExtensionConfig,
   repoFromRemote,
   runExtensionCommand,
+  startCommandSession,
+  startExtensionCommand,
+  stopCommandSessions,
+  stopExtensionCommand,
   writeExtensionConfig,
 } from "../server/extensions";
 
@@ -24,10 +30,39 @@ const agentDir = path.join(root, "agent");
 const project = path.join(root, "project");
 const fakePi = path.join(root, "pi");
 
-// Answers get_commands, runs `/echo <args>` as a notify, and starts a turn for `/turn`.
+// Answers get_commands, runs `/echo <args>` as a notify, and starts a turn for `/turn`. `/ask`
+// opens a select, a confirm, an input, and an editor in turn; `/timed` opens a select that pi
+// gives up on after a second, then a confirm. Each pi writes its pid to `pids`.
 const FAKE_PI = `#!/usr/bin/env node
+require("fs").appendFileSync(require("path").join(__dirname, "pids"), process.pid + "\\n");
 let buffer = "";
+let asked = 0;
+const waiting = new Map();
 const out = (record) => console.log(JSON.stringify(record));
+const ask = (method, fields) => new Promise((done) => {
+  const id = "u" + ++asked;
+  waiting.set(id, done);
+  out({ type: "extension_ui_request", id, method, ...fields });
+});
+const notify = (message) => out({ type: "extension_ui_request", id: "n" + ++asked, method: "notify", notifyType: "info", message });
+async function askAll(id) {
+  notify("asking");
+  const pick = await ask("select", { title: "Pick one", options: ["red", "blue"] });
+  const sure = await ask("confirm", { title: "Sure?", message: "This cannot be undone." });
+  const name = await ask("input", { title: "Name", placeholder: "your name", prefill: "ada" });
+  const text = await ask("editor", { title: "Notes", prefill: "first line" });
+  notify([pick.value, sure.confirmed, name.cancelled ? "cancelled" : name.value, JSON.stringify(text.value)].join(" "));
+  out({ type: "response", id, success: true, data: { disposition: "handled", agentInvoked: false } });
+}
+async function timed(id) {
+  const quick = ask("select", { title: "Quick", options: ["x"], timeout: 1000 });
+  const first = await Promise.race([quick, new Promise((done) => setTimeout(() => done({ timedOut: true }), 1000))]);
+  waiting.delete("u" + asked);
+  notify(first.timedOut ? "gave up" : "got " + first.value);
+  const next = await ask("confirm", { title: "Next?" });
+  notify("next " + next.confirmed);
+  out({ type: "response", id, success: true, data: { disposition: "handled", agentInvoked: false } });
+}
 process.stdin.on("data", (chunk) => {
   buffer += chunk;
   let index;
@@ -37,6 +72,8 @@ process.stdin.on("data", (chunk) => {
     if (msg.type === "get_commands") out({ type: "response", id: msg.id, success: true, data: { commands: [
       { name: "echo", description: "Says it back", source: "extension", sourceInfo: { path: "native:@x/echo/echo" } },
       { name: "turn", description: "Starts a turn", source: "extension", sourceInfo: { path: "native:@x/echo/echo" } },
+      { name: "ask", description: "Asks four questions", source: "extension", sourceInfo: { path: "native:@x/echo/echo" } },
+      { name: "timed", description: "Asks with a timeout", source: "extension", sourceInfo: { path: "native:@x/echo/echo" } },
       { name: "mcp", description: "Built in", source: "extension", sourceInfo: { path: "builtin:mcp" } },
       { name: "skill:review", description: "A skill", source: "skill", sourceInfo: { path: "/s/SKILL.md" } },
     ] } });
@@ -46,6 +83,12 @@ process.stdin.on("data", (chunk) => {
       out({ type: "response", id: msg.id, success: true, data: { disposition: "handled", agentInvoked: false } });
     }
     if (msg.type === "prompt" && msg.message.startsWith("/turn")) out({ type: "response", id: msg.id, success: true, data: { disposition: "handled", agentInvoked: true } });
+    if (msg.type === "prompt" && msg.message === "/ask") void askAll(msg.id);
+    if (msg.type === "prompt" && msg.message === "/timed") void timed(msg.id);
+    if (msg.type === "extension_ui_response") {
+      waiting.get(msg.id)?.(msg);
+      waiting.delete(msg.id);
+    }
     if (msg.type === "abort") out({ type: "response", id: msg.id, success: true });
   }
 });
@@ -63,12 +106,75 @@ before(() => {
 test("extension commands list and run headlessly", async () => {
   const { commands, error } = await extensionCommands({ cwd: project });
   assert.equal(error, null);
-  assert.deepEqual(commands.map((c) => c.name), ["echo", "turn"]);
+  assert.deepEqual(commands.map((c) => c.name), ["echo", "turn", "ask", "timed"]);
   const echoed = await runExtensionCommand({ cwd: project, command: "echo", args: "  hello  " });
   assert.deepEqual(echoed, { disposition: "handled", agentInvoked: false, output: [{ level: "info", text: "you said: hello" }], neededUi: true });
   const turn = await runExtensionCommand({ cwd: project, command: "turn", args: "" });
   assert.equal(turn.agentInvoked, true);
   await assert.rejects(runExtensionCommand({ cwd: project, command: "skill:review", args: "" }), /not a command of an installed extension/);
+});
+
+function waiting(step: CommandStep) {
+  assert.equal(step.status, "waiting");
+  return step;
+}
+
+test("interactive commands pass dialogs to the client and its answers back to pi", async () => {
+  const select = waiting(await startExtensionCommand({ cwd: project, command: "ask", args: "" }));
+  assert.deepEqual(select.output, [{ level: "info", text: "asking" }]);
+  assert.deepEqual([select.dialog.method, select.dialog.title, select.dialog.options, select.dialog.timeoutMs], ["select", "Pick one", ["red", "blue"], null]);
+  const confirm = waiting(await answerExtensionCommand({ session: select.session, dialog: select.dialog.id, answer: { value: "blue" } }));
+  assert.deepEqual([confirm.dialog.method, confirm.dialog.message], ["confirm", "This cannot be undone."]);
+  const input = waiting(await answerExtensionCommand({ session: select.session, dialog: confirm.dialog.id, answer: { confirmed: true } }));
+  assert.deepEqual([input.dialog.method, input.dialog.placeholder, input.dialog.prefill], ["input", "your name", "ada"]);
+  const editor = waiting(await answerExtensionCommand({ session: select.session, dialog: input.dialog.id, answer: { cancelled: true } }));
+  assert.deepEqual([editor.dialog.method, editor.dialog.prefill], ["editor", "first line"]);
+  const done = await answerExtensionCommand({ session: select.session, dialog: editor.dialog.id, answer: { value: "a\nb" } });
+  assert.deepEqual(done, {
+    status: "done",
+    result: { disposition: "handled", agentInvoked: false, neededUi: false, output: [{ level: "info", text: "asking" }, { level: "info", text: 'blue true cancelled "a\\nb"' }] },
+  });
+  await assert.rejects(answerExtensionCommand({ session: select.session, dialog: editor.dialog.id, answer: { value: "again" } }), /no longer running/);
+});
+
+test("an answer to a dialog pi gave up on is dropped", async () => {
+  const quick = waiting(await startExtensionCommand({ cwd: project, command: "timed", args: "" }));
+  assert.ok(quick.dialog.timeoutMs !== null && quick.dialog.timeoutMs > 0 && quick.dialog.timeoutMs <= 1000);
+  await sleep(1100);
+  const next = waiting(await answerExtensionCommand({ session: quick.session, dialog: quick.dialog.id, answer: { value: "x" } }));
+  assert.equal(next.dialog.title, "Next?");
+  assert.deepEqual(next.output.map((notice) => notice.text), ["gave up"]);
+  const done = await answerExtensionCommand({ session: quick.session, dialog: next.dialog.id, answer: { confirmed: false } });
+  assert.deepEqual(done.status === "done" && done.result.output.map((notice) => notice.text), ["gave up", "next false"]);
+});
+
+test("interactive commands stop on request, after the idle time, and when the plugin unloads", async () => {
+  const pids = path.join(root, "pids");
+  const alive = (pid: number) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  writeFileSync(pids, "");
+  const stopped = waiting(await startExtensionCommand({ cwd: project, command: "ask", args: "" }));
+  assert.deepEqual(stopExtensionCommand({ session: stopped.session }), { stopped: true });
+  await assert.rejects(answerExtensionCommand({ session: stopped.session, dialog: stopped.dialog.id, answer: { value: "red" } }), /no longer running/);
+
+  const idle = waiting(await startCommandSession(project, "ask", "", 150));
+  await sleep(300);
+  await assert.rejects(answerExtensionCommand({ session: idle.session, dialog: idle.dialog.id, answer: { value: "red" } }), /Nobody answered \/ask/);
+
+  const first = waiting(await startExtensionCommand({ cwd: project, command: "ask", args: "" }));
+  const second = waiting(await startExtensionCommand({ cwd: project, command: "timed", args: "" }));
+  stopCommandSessions();
+  for (const step of [first, second]) await assert.rejects(answerExtensionCommand({ session: step.session, dialog: step.dialog.id, answer: { cancelled: true } }), /no longer running/);
+  await sleep(1000);
+  const started = readFileSync(pids, "utf8").trim().split("\n").map(Number);
+  assert.ok(started.length >= 4);
+  assert.deepEqual(started.filter(alive), []);
 });
 
 test("extension config files read and write as JSON objects", async () => {
