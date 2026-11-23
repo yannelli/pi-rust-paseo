@@ -11,7 +11,10 @@ import {
   extensionsInfoRpc,
   extensionsListRpc,
   extensionsRunRpc,
+  extensionCommandAnswerRpc,
   extensionCommandRunRpc,
+  extensionCommandStartRpc,
+  extensionCommandStopRpc,
   extensionCommandsRpc,
   extensionConfigReadRpc,
   extensionConfigWriteRpc,
@@ -61,7 +64,7 @@ import {
 import { agentDir, piBinary, piVersion } from "./pi";
 import { activeCounts, controlRun, getRun, listRuns, runFiles, runOutput, startRunRpc, steerRun, workflowsExtension } from "./runs";
 import { agentStatus, statusSummary, stopTask, taskLog } from "./status";
-import { deferredConfig, deferredOptions, deferredSet, extensionCommands, readExtensionConfig, runExtensionCommand, writeExtensionConfig } from "./extensions";
+import { answerExtensionCommand, deferredConfig, deferredOptions, deferredSet, extensionCommands, readExtensionConfig, runExtensionCommand, startExtensionCommand, stopExtensionCommand, writeExtensionConfig } from "./extensions";
 import { deferredConfigRpc, deferredOptionsRpc, deferredSetRpc } from "../shared/deferred";
 import { dirInfo } from "./where";
 import { claudeRunRpc, claudeStateRpc } from "../shared/claude";
@@ -160,6 +163,9 @@ export function registerHandlers(server: PluginServerContext, remember: (paseo: 
   handle(extensionsRunRpc, runExtension);
   handle(extensionCommandsRpc, extensionCommands);
   handle(extensionCommandRunRpc, runExtensionCommand);
+  handle(extensionCommandStartRpc, startExtensionCommand);
+  handle(extensionCommandAnswerRpc, answerExtensionCommand);
+  handle(extensionCommandStopRpc, stopExtensionCommand);
   handle(extensionConfigReadRpc, readExtensionConfig);
   handle(extensionConfigWriteRpc, writeExtensionConfig);
   handle(deferredConfigRpc, deferredConfig);
