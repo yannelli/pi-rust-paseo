@@ -739,23 +739,41 @@ export function Divider() {
   return <View style={{ height: 1, backgroundColor: theme.colors.border }} />;
 }
 
-export function CodeBlock({ text, maxHeight }: { text: string; maxHeight?: number }) {
+/**
+ * Text in a code box. With `maxHeight` the box scrolls; `follow` opens it at the end and keeps
+ * the end in view as the text grows, until the user scrolls up.
+ */
+export function CodeBlock({ text, maxHeight, follow }: { text: string; maxHeight?: number; follow?: boolean }) {
   const { theme } = useUi();
+  const scroll = useRef<NativeScrollView>(null);
+  const atEnd = useRef(true);
+  const box: ViewStyle = { backgroundColor: theme.colors.surface0, borderColor: theme.colors.border, borderWidth: 1, borderRadius: 8, overflow: "hidden" };
+  const body = (
+    <Txt size="sm" mono selectable>
+      {text || " "}
+    </Txt>
+  );
+  if (maxHeight === undefined) return <View style={{ ...box, padding: 12 }}>{body}</View>;
   return (
-    <View
-      style={{
-        backgroundColor: theme.colors.surface0,
-        borderColor: theme.colors.border,
-        borderWidth: 1,
-        borderRadius: 8,
-        padding: 12,
-        maxHeight,
-        overflow: "hidden",
-      }}
-    >
-      <Txt size="sm" mono selectable>
-        {text || " "}
-      </Txt>
+    <View style={box}>
+      <ScrollView
+        ref={scroll}
+        nestedScrollEnabled
+        style={{ maxHeight }}
+        contentContainerStyle={{ padding: 12 }}
+        scrollEventThrottle={100}
+        onScroll={
+          follow
+            ? (event) => {
+                const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+                atEnd.current = contentOffset.y + layoutMeasurement.height >= contentSize.height - 24;
+              }
+            : undefined
+        }
+        onContentSizeChange={follow ? () => atEnd.current && scroll.current?.scrollToEnd({ animated: false }) : undefined}
+      >
+        {body}
+      </ScrollView>
     </View>
   );
 }

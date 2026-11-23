@@ -391,7 +391,21 @@ export function setup() {
   task(
     "a1b2c3d4",
     { name: "E2E suite", description: "Desktop and mobile Playwright suite", command: "npm run test:e2e -- --workers=4", pid: sleeper.pid, processStart: lstart(), status: "running", startedAt: now - 4 * MINUTE, timeoutSeconds: 900 },
-    "Running 148 tests using 4 workers\n\n  ✓  1 [desktop] › limits.spec.ts:12 › returns 429 after the limit (1.2s)\n  ✓  2 [desktop] › limits.spec.ts:31 › resets after the window (0.9s)\n  ✓  3 [mobile] › auth.spec.ts:8 › signs in (1.4s)\n  ·  4 [mobile] › limits.spec.ts:44 › separate keys\n",
+    [
+      "Running 148 tests using 4 workers\n",
+      "  ✓  1 [desktop] › limits.spec.ts:12 › returns 429 after the limit (1.2s)",
+      "  ✓  2 [desktop] › limits.spec.ts:31 › resets after the window (0.9s)",
+      "  ✓  3 [mobile] › auth.spec.ts:8 › signs in (1.4s)",
+      "  ✓  4 [mobile] › limits.spec.ts:44 › separate keys (1.1s)",
+      "  ✓  5 [desktop] › auth.spec.ts:21 › signs out (0.7s)",
+      "  ✓  6 [desktop] › keys.spec.ts:9 › creates a key (1.6s)",
+      "  ✓  7 [mobile] › keys.spec.ts:27 › revokes a key (1.3s)",
+      "  ✓  8 [desktop] › limits.spec.ts:58 › counts per route (1.0s)",
+      "  ✓  9 [mobile] › limits.spec.ts:12 › returns 429 after the limit (1.5s)",
+      "  ✓ 10 [desktop] › dashboard.spec.ts:14 › shows usage (2.2s)",
+      "  · 11 [mobile] › dashboard.spec.ts:30 › filters by key",
+      "",
+    ].join("\n"),
   );
   task("e5f6a7b8", { name: "Type check", description: "tsc --noEmit for the workspace", command: "npx tsc --noEmit", status: "completed", exitCode: 0, startedAt: now - 9 * MINUTE, endedAt: now - 8 * MINUTE });
   task("c9d0e1f2", { name: "Lint", description: "Biome check of the changed files", command: "npx biome check src", status: "failed", exitCode: 1, startedAt: now - 7 * MINUTE, endedAt: now - 6 * MINUTE }, "src/http/limits.ts:14:7 lint/style/useConst  This let is only assigned once.\nFound 1 error.\n");

@@ -337,7 +337,15 @@ function TaskDetail({ task, sessionId }: { task: BgTask; sessionId: string }) {
           {task.error}
         </Txt>
       ) : null}
-      {log.data?.text ? <CodeBlock text={log.data.truncated ? `…\n${log.data.text}` : log.data.text} maxHeight={200} /> : log.isLoading ? null : <Txt size="xs" tone="muted">No output yet.</Txt>}
+      {log.data?.text ? (
+        <CodeBlock text={log.data.truncated ? `…\n${log.data.text}` : log.data.text} maxHeight={200} follow />
+      ) : log.error ? (
+        <ErrorBox title="Cannot read the task output" error={log.error} />
+      ) : log.isLoading ? null : (
+        <Txt size="xs" tone="muted">
+          No output yet.
+        </Txt>
+      )}
       <Row justify="space-between">
         <Txt size="xs" tone="muted">
           {`${task.id}${task.timeoutSeconds ? ` · times out after ${formatDuration(task.timeoutSeconds)}` : ""}`}
