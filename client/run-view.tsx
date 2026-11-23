@@ -18,6 +18,7 @@ import {
   Empty,
   ErrorBox,
   Field,
+  FitWidth,
   KeyValue,
   Notice,
   Row,
@@ -63,7 +64,16 @@ function shortModel(model: string | null): string {
   return slash >= 0 ? model.slice(slash + 1) : model;
 }
 
-export function RunView({ id, onBack }: { id: string; onBack?: () => void }) {
+/** Side by side, the step list takes 300px; narrower containers stack it above the detail. */
+export function RunView(props: { id: string; onBack?: () => void }) {
+  return (
+    <FitWidth below={760}>
+      <RunBody {...props} />
+    </FitWidth>
+  );
+}
+
+function RunBody({ id, onBack }: { id: string; onBack?: () => void }) {
   const { compact } = useUi();
   const query = useRpcQuery(
     runGetRpc,

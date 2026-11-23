@@ -2,7 +2,7 @@
 // from the host theme; status colors appear as a 16% tint behind text of the same hue.
 import type { PluginTheme } from "@getpaseo/plugin";
 import { Icon, Modal, ScrollView, TextInput } from "@getpaseo/plugin/client/ui";
-import { createContext, useContext, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, Animated, Pressable, Text, View, type ScrollView as NativeScrollView, type StyleProp, type TextStyle, type ViewStyle } from "react-native";
 import type { RunStatus } from "../shared/runs";
 
@@ -14,15 +14,37 @@ export interface Navigation {
 export interface Ui {
   theme: PluginTheme;
   compact: boolean;
+  /** The window's layout, for modals; `compact` can also follow a narrow container (see FitWidth). */
+  windowCompact?: boolean;
   /** Client navigation of screens and panels; absent in timeline rows and on older hosts. */
   navigation?: Navigation;
 }
 
 const UiContext = createContext<Ui | null>(null);
 
-export function UiProvider({ theme, compact, navigation, children }: Ui & { children: ReactNode }) {
-  const value = useMemo(() => ({ theme, compact, navigation }), [theme, compact, navigation]);
+export function UiProvider({ theme, compact, windowCompact, navigation, children }: Ui & { children: ReactNode }) {
+  const value = useMemo(() => ({ theme, compact, windowCompact, navigation }), [theme, compact, windowCompact, navigation]);
   return <UiContext.Provider value={value}>{children}</UiContext.Provider>;
+}
+
+/** Containers narrower than this get the compact layout, as on a phone. */
+export const NARROW_BELOW = 640;
+
+/**
+ * A view that gives its children the compact layout while it is narrower than `below`, so the
+ * screen and the panel fit split panes and the Explorer sidebar on a wide window.
+ */
+export function FitWidth({ below = NARROW_BELOW, style, children }: { below?: number; style?: StyleProp<ViewStyle>; children: ReactNode }) {
+  const ui = useUi();
+  const [width, setWidth] = useState<number | null>(null);
+  const narrow = width !== null && width < below;
+  return (
+    <View style={style} onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
+      <UiProvider theme={ui.theme} compact={ui.compact || narrow} windowCompact={ui.windowCompact ?? ui.compact} navigation={ui.navigation}>
+        {children}
+      </UiProvider>
+    </View>
+  );
 }
 
 export function useUi(): Ui {
@@ -817,7 +839,7 @@ export function UiModal({
   return (
     <Modal title={title} open={open} onOpenChange={(next) => !next && onClose()}>
       <Modal.Content contentContainerStyle={contentContainerStyle}>
-        <UiProvider theme={ui.theme} compact={ui.compact} navigation={ui.navigation}>
+        <UiProvider theme={ui.theme} compact={ui.windowCompact ?? ui.compact} navigation={ui.navigation}>
           {children}
         </UiProvider>
       </Modal.Content>

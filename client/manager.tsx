@@ -17,7 +17,7 @@ import { RunsList } from "./runs";
 import { SessionsTab } from "./sessions";
 import { SkillsTab } from "./skills";
 import { SubscriptionsTab } from "./subscriptions";
-import { Badge, BrandMark, Row, Stack, TabBar, Txt, UiProvider, shortPath, useUi, type Navigation } from "./ui";
+import { Badge, BrandMark, FitWidth, Row, Stack, TabBar, Txt, UiProvider, shortPath, useUi, type Navigation } from "./ui";
 import { WorkflowsTab } from "./workflows";
 import { kindIcon, useWorkspaceIndex, WorkspaceChip, WorkspacePickerModal } from "./workspaces";
 
@@ -51,7 +51,9 @@ function runsBadge(counts: { active: number; approvals: number }) {
 export function ManagerScreen({ theme, layout, params, navigation }: PluginScreenProps) {
   return (
     <UiProvider theme={theme} compact={layout.compact} navigation={navigation as Navigation | undefined}>
-      <Manager params={params} />
+      <FitWidth style={{ flex: 1 }}>
+        <Manager params={params} />
+      </FitWidth>
     </UiProvider>
   );
 }
@@ -174,7 +176,9 @@ type PanelTab = "workflows" | "runs";
 export function WorkflowsPanel({ theme, layout, workspaceId, navigation }: PluginWorkspacePanelProps) {
   return (
     <UiProvider theme={theme} compact={layout.compact} navigation={navigation as Navigation | undefined}>
-      <Panel workspaceId={workspaceId} />
+      <FitWidth style={{ flex: 1 }}>
+        <Panel workspaceId={workspaceId} />
+      </FitWidth>
     </UiProvider>
   );
 }

@@ -45,6 +45,7 @@ import {
   Divider,
   ErrorBox,
   Field,
+  FitWidth,
   IconButton,
   Notice,
   Row,
@@ -1166,19 +1167,24 @@ function DraftCard({
 
 // The editor --------------------------------------------------------------------------------
 
-export function WorkflowEditor({
-  cwd,
-  target,
-  onClose,
-  onSaved,
-  onRun,
-}: {
+interface EditorProps {
   cwd?: string;
   target: EditorTarget;
   onClose: () => void;
   onSaved?: (saved: Saved) => void;
   onRun?: (saved: Saved) => void;
-}) {
+}
+
+/** Side by side, the pipeline takes 290px; narrower containers stack it above the step. */
+export function WorkflowEditor(props: EditorProps) {
+  return (
+    <FitWidth below={760}>
+      <Editor {...props} />
+    </FitWidth>
+  );
+}
+
+function Editor({ cwd, target, onClose, onSaved, onRun }: EditorProps) {
   const { theme, compact } = useUi();
   const toast = useToast();
   const start = useMemo(() => startingWorkflow(target), [target]);
