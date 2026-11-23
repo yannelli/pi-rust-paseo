@@ -22,7 +22,7 @@ import {
 } from "../shared/status";
 import { exists, listDir, readJson, readTail, readText, writeAtomic, prettyJson } from "./fsutil";
 import { agentDir } from "./pi";
-import { listRuns } from "./runs";
+import { allRuns } from "./runs";
 
 interface AgentInfo {
   id: string;
@@ -83,6 +83,8 @@ function normalize(text: string): string {
   return text.trim().split(/\s+/).join(" ");
 }
 
+type ProcessStarts = () => Promise<Map<number, string> | null>;
+
 /** Start times of all processes, as `ps -o lstart` prints them; null where `ps` is unavailable. */
 function processStarts(): Promise<Map<number, string> | null> {
   if (process.platform === "win32") return Promise.resolve(null);
@@ -97,6 +99,12 @@ function processStarts(): Promise<Map<number, string> | null> {
       resolve(map);
     });
   });
+}
+
+/** Runs `ps` on the first call only, so a status without running tasks spawns no process. */
+function lazyStarts(): ProcessStarts {
+  let starts: Promise<Map<number, string> | null> | null = null;
+  return () => (starts ??= processStarts());
 }
 
 interface RawTask {
@@ -117,7 +125,7 @@ interface RawTask {
 }
 
 /** A recorded `running` task is finished when its exit file exists, and lost when its process is gone. */
-async function effectiveStatus(raw: RawTask, dir: string, starts: Map<number, string> | null): Promise<{ status: BgStatus; exitCode: number | null }> {
+async function effectiveStatus(raw: RawTask, dir: string, processes: ProcessStarts): Promise<{ status: BgStatus; exitCode: number | null }> {
   const recorded = (raw.status ?? "running") as BgStatus;
   if (recorded !== "running") return { status: recorded, exitCode: raw.exitCode ?? null };
   const exit = await readText(path.join(dir, "exit")).catch(() => null);
@@ -125,23 +133,23 @@ async function effectiveStatus(raw: RawTask, dir: string, starts: Map<number, st
     const code = Number(exit.trim());
     return { status: code === 0 ? "completed" : "failed", exitCode: Number.isFinite(code) ? code : null };
   }
-  if (!starts || !raw.pid) return { status: "running", exitCode: null };
+  if (!raw.pid) return { status: "running", exitCode: null };
+  const starts = await processes();
+  if (!starts) return { status: "running", exitCode: null };
   const start = starts.get(raw.pid);
   const alive = start !== undefined && (!raw.processStart || start === normalize(raw.processStart));
   return { status: alive ? "running" : "lost", exitCode: null };
 }
 
-export async function readTasks(sessionId: string, starts?: Map<number, string> | null): Promise<BgTask[]> {
+export async function readTasks(sessionId: string, starts: ProcessStarts = lazyStarts()): Promise<BgTask[]> {
   const root = tasksDir(sessionId);
   const ids = await listDir(root);
-  if (ids.length === 0) return [];
-  const pids = starts === undefined ? await processStarts() : starts;
   const tasks: BgTask[] = [];
   for (const id of ids) {
     const dir = path.join(root, id);
     const raw = await readJson<RawTask>(path.join(dir, "task.json")).catch(() => null);
     if (!raw) continue;
-    const { status, exitCode } = await effectiveStatus(raw, dir, pids);
+    const { status, exitCode } = await effectiveStatus(raw, dir, starts);
     const size = await fs.stat(path.join(dir, "output.log")).then((s) => s.size).catch(() => 0);
     tasks.push({
       id: raw.id ?? id,
@@ -177,7 +185,7 @@ export async function stopTask({ sessionId, taskId }: RpcInput<typeof taskStopRp
   const raw = await readJson<RawTask>(path.join(dir, "task.json"));
   if (!raw) throw new Error(`No background task ${taskId}.`);
   const starts = await processStarts();
-  const { status } = await effectiveStatus(raw, dir, starts);
+  const { status } = await effectiveStatus(raw, dir, async () => starts);
   if (status !== "running" || !raw.pid) throw new Error(`Task ${raw.name ?? taskId} is not running.`);
   if (starts && raw.processStart && starts.get(raw.pid) !== normalize(raw.processStart)) {
     throw new Error(`The process of ${raw.name ?? taskId} is gone.`);
@@ -316,9 +324,25 @@ function runsFor(agent: AgentInfo, runs: RunSummary[]): RunSummary[] {
   return runs.filter((run) => run.paseoAgentId === agent.id || within(run.cwd, agent.cwd));
 }
 
-export async function statusSummary(paseo: PaseoApi | null): Promise<{ agents: AgentStatusSummary[] }> {
-  if (!paseo) return { agents: [] };
-  const [agents, { runs }, starts] = await Promise.all([activeAgents(paseo), listRuns({ limit: 300 }), processStarts()]);
+/** Apps poll the summary every few seconds; apps that poll within this window share one read. */
+const SUMMARY_TTL_MS = 1000;
+const summaryCache = new WeakMap<PaseoApi, { at: number; result: Promise<{ agents: AgentStatusSummary[] }> }>();
+
+export function statusSummary(paseo: PaseoApi | null): Promise<{ agents: AgentStatusSummary[] }> {
+  if (!paseo) return Promise.resolve({ agents: [] });
+  const cached = summaryCache.get(paseo);
+  if (cached && Date.now() - cached.at < SUMMARY_TTL_MS) return cached.result;
+  const entry = { at: Date.now(), result: readSummary(paseo) };
+  summaryCache.set(paseo, entry);
+  entry.result.catch(() => {
+    if (summaryCache.get(paseo) === entry) summaryCache.delete(paseo);
+  });
+  return entry.result;
+}
+
+async function readSummary(paseo: PaseoApi): Promise<{ agents: AgentStatusSummary[] }> {
+  const [agents, runs] = await Promise.all([activeAgents(paseo), allRuns()]);
+  const starts = lazyStarts();
   const now = Date.now();
   const out: AgentStatusSummary[] = [];
   const goalCache = new Map<string, Goal[]>();
@@ -353,8 +377,7 @@ export async function statusSummary(paseo: PaseoApi | null): Promise<{ agents: A
 export async function agentStatus({ agentId }: RpcInput<typeof agentStatusRpc>, paseo: PaseoApi | null): Promise<RpcOutput<typeof agentStatusRpc>> {
   if (!paseo) throw new Error("The plugin has no daemon session yet.");
   const agent = await findAgent(paseo, agentId);
-  const { runs } = await listRuns({ limit: 300 });
-  const mine = runsFor(agent, runs);
+  const mine = runsFor(agent, await allRuns());
   const active = mine.filter((run) => isActive(run.status) && !run.stale);
   const recent = mine.filter((run) => !active.includes(run)).slice(0, 5);
   return {

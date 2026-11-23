@@ -197,22 +197,54 @@ function summarize(raw: RawRun, link: PaseoLink | null): RunSummary {
   };
 }
 
-export async function listRuns({ cwd, workflow, limit }: RpcInput<typeof runsListRpc>): Promise<RpcOutput<typeof runsListRpc>> {
+interface CachedRun {
+  /** The stat signature of `run.json` and the link file when the summary was read. */
+  key: string;
+  /** Null for a run without a readable `run.json`. */
+  summary: RunSummary | null;
+  heartbeatMs: number;
+}
+
+const runCache = new Map<string, CachedRun>();
+
+async function statKey(file: string): Promise<string> {
+  const stat = await fs.stat(file).catch(() => null);
+  return stat ? `${stat.ino}:${stat.mtimeMs}:${stat.size}` : "-";
+}
+
+/** A run's summary, read again only when its `run.json` or link file changed. */
+async function cachedSummary(id: string): Promise<RunSummary | null> {
+  const dir = runDir(id);
+  const key = (await Promise.all([statKey(path.join(dir, "run.json")), statKey(path.join(dir, PASEO_FILE))])).join("/");
+  let entry = runCache.get(id);
+  if (entry?.key !== key) {
+    entry = { key, summary: null, heartbeatMs: 0 };
+    try {
+      const { raw, link } = await readRun(id);
+      entry = { key, summary: summarize(raw, link), heartbeatMs: raw.heartbeatMs ?? 0 };
+    } catch {
+      // A run directory without a readable run.json is skipped, as pi skips it.
+    }
+    runCache.set(id, entry);
+  }
+  const { summary, heartbeatMs } = entry;
+  if (!summary) return null;
+  return { ...summary, stale: isActive(summary.status) && Date.now() - heartbeatMs > STALE_MS };
+}
+
+/** Every run, newest first. */
+export async function allRuns(): Promise<RunSummary[]> {
   const ids = (await listDir(runsDir())).filter((name) => name.startsWith("wf-"));
-  const runs: RunSummary[] = [];
-  await Promise.all(
-    ids.map(async (id) => {
-      try {
-        const { raw, link } = await readRun(id);
-        if (cwd && path.resolve(raw.cwd ?? "") !== path.resolve(cwd)) return;
-        if (workflow && raw.workflow?.name !== workflow) return;
-        runs.push(summarize(raw, link));
-      } catch {
-        // A run directory without a readable run.json is skipped, as pi skips it.
-      }
-    }),
+  const present = new Set(ids);
+  for (const id of runCache.keys()) if (!present.has(id)) runCache.delete(id);
+  const runs = (await Promise.all(ids.map(cachedSummary))).filter((run): run is RunSummary => run !== null);
+  return runs.sort((a, b) => b.startedMs - a.startedMs);
+}
+
+export async function listRuns({ cwd, workflow, limit }: RpcInput<typeof runsListRpc>): Promise<RpcOutput<typeof runsListRpc>> {
+  const runs = (await allRuns()).filter(
+    (run) => (!cwd || path.resolve(run.cwd) === path.resolve(cwd)) && (!workflow || run.workflow === workflow),
   );
-  runs.sort((a, b) => b.startedMs - a.startedMs);
   return { runs: runs.slice(0, limit ?? 100) };
 }
 
@@ -692,7 +724,7 @@ export async function releaseRuns(): Promise<void> {
 }
 
 export async function activeCounts(): Promise<{ active: number; approvals: number }> {
-  const { runs } = await listRuns({ limit: 1000 });
+  const runs = await allRuns();
   return {
     active: runs.filter((run) => isActive(run.status) && !run.stale).length,
     approvals: runs.filter((run) => isActive(run.status) && !run.stale && run.approval).length,
