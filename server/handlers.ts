@@ -3,6 +3,7 @@ import type { PluginRpcContract, RpcInput, RpcOutput } from "@getpaseo/plugin";
 import type { input as ZodInput, output as ZodOutput, ZodType } from "zod";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import {
+  authCheckRpc,
   catalogRpc,
   dirInfoRpc,
   defaultsWriteRpc,
@@ -39,6 +40,7 @@ import {
   workflowsListRpc,
 } from "../shared/contracts";
 import {
+  authCheck,
   doctor,
   extensionInfo,
   listExtensions,
@@ -135,6 +137,7 @@ export function registerHandlers(server: PluginServerContext, remember: (paseo: 
 
   handle(overviewRpc, overview);
   handle(doctorRpc, doctor);
+  handle(authCheckRpc, authCheck);
   handle(updateRpc, update);
   handle(modelsRpc, models);
   handle(settingsReadRpc, readSettings);

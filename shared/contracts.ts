@@ -73,6 +73,35 @@ export const doctorRpc = defineRpc({
   output: z.object({ report: JsonRecord.nullable(), error: z.string().nullable() }),
 });
 
+/** A provider or model name that pi reads as a flag value. */
+const PiName = z.string().regex(/^[^\s-]\S*$/, "a provider or model name");
+
+export const AuthTargetSchema = z
+  .object({ provider: PiName.nullable(), model: PiName.nullable() })
+  .refine((target) => target.provider !== null || target.model !== null, "a provider or a model");
+export type AuthTarget = z.infer<typeof AuthTargetSchema>;
+
+export const AuthCheckSchema = z.object({
+  /** `ready`, `not_ready`, and `invalid` are pi's answers; `failed` means pi printed none. */
+  status: z.enum(["ready", "not_ready", "invalid", "failed"]),
+  /** The provider pi resolved, or the requested name when it resolved none. */
+  provider: z.string(),
+  /** `oauth` or `api_key`, when ready. */
+  authType: z.string().nullable(),
+  /** pi's reason code, such as `credentials_not_configured`. */
+  reason: z.string().nullable(),
+  /** What pi printed on stderr when it gave no answer. */
+  error: z.string().nullable(),
+});
+export type AuthCheck = z.infer<typeof AuthCheckSchema>;
+
+/** `pi auth check --no-refresh` for each target; results keep the order of the targets. */
+export const authCheckRpc = defineRpc({
+  name: "pi.auth.check",
+  input: z.object({ targets: z.array(AuthTargetSchema).max(64) }),
+  output: z.object({ results: z.array(AuthCheckSchema) }),
+});
+
 export const UPDATE_TARGETS = ["self", "extensions", "models", "all"] as const;
 
 export const updateRpc = defineRpc({
@@ -119,6 +148,8 @@ export const defaultsWriteRpc = defineRpc({
   output: z.object({ path: z.string() }),
 });
 
+const PiDuration = z.string().regex(/^\d+[smhdw]$/, "a number and a unit (s, m, h, d, w), such as 30d");
+
 export const sessionsListRpc = defineRpc({
   name: "pi.sessions.list",
   input: z.object({ cwd: z.string().optional(), all: z.boolean(), limit: z.number().int().positive().optional() }),
@@ -151,7 +182,7 @@ export const sessionsPruneRpc = defineRpc({
   input: z.object({
     cwd: z.string().optional(),
     all: z.boolean(),
-    olderThan: z.string().regex(/^\d+[smhdw]$/, "a number and a unit (s, m, h, d, w), such as 30d"),
+    olderThan: PiDuration,
     dryRun: z.boolean(),
   }),
   output: CommandResultSchema,
@@ -159,7 +190,12 @@ export const sessionsPruneRpc = defineRpc({
 
 export const statsRpc = defineRpc({
   name: "pi.stats",
-  input: z.object({ cwd: z.string().optional(), all: z.boolean() }),
+  input: z.object({
+    cwd: z.string().optional(),
+    all: z.boolean(),
+    /** Count only this recent period; omitted counts everything. */
+    since: PiDuration.optional(),
+  }),
   output: z.object({ report: JsonRecord.nullable(), error: z.string().nullable() }),
 });
 

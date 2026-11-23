@@ -531,6 +531,63 @@ const marketplace = [
   ["workflows", "Fixed and dynamic multi-agent workflows with per-step models, tools, skills, MCP servers, and approvals.", "v0.5.13"],
 ];
 
+// Overview: sign-in checks and usage stats --------------------------------------------------
+
+/** Providers doctor reports, with how they sign in; groq's key went missing from the environment. */
+const demoAuth = [
+  ["anthropic", "oauth"],
+  ["openai-codex", "oauth"],
+  ["xai", "oauth"],
+  ["openrouter", "api_key"],
+  ["groq", "api_key"],
+];
+
+/** `pi auth check --no-refresh` for one target. */
+function demoAuthCheck({ provider, model }) {
+  const name = provider ?? model.split("/")[0];
+  const known = demoAuth.find(([id]) => id === name);
+  if (!known) return { status: "not_ready", provider: name, authType: null, reason: "provider_not_found", error: null };
+  if (name === "groq") return { status: "not_ready", provider: name, authType: null, reason: "credentials_not_configured", error: null };
+  return { status: "ready", provider: name, authType: known[1], reason: null, error: null };
+}
+
+/** `pi stats --json`, scaled to the chosen period, with the days of the last two weeks. */
+function demoStats(now, since) {
+  const share = { "30d": 0.55, "7d": 0.2, "24h": 0.04 }[since] ?? 1;
+  const startMs = since ? now - { "30d": 30, "7d": 7, "24h": 1 }[since] * 86_400_000 : null;
+  const tokens = (total) => ({ total: Math.round(total * share) });
+  const row = (name, sessions, cost, total) => ({ name, sessions: Math.max(1, Math.round(sessions * share)), cost: cost * share, tokens: tokens(total) });
+  const dayCosts = [6.1, 0, 14.2, 22.8, 9.4, 0, 0, 18.6, 31.2, 12.5, 7.9, 26.4, 19.3, 8.7];
+  const byDay = dayCosts
+    .map((cost, index) => {
+      const day = new Date(now - (13 - index) * 86_400_000);
+      const date = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+      return { date, start: new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime(), sessions: Math.ceil(cost / 6), cost, tokens: { total: Math.round(cost * 3_100_000) } };
+    })
+    .filter((day) => day.cost > 0 && (startMs === null || day.start + 86_400_000 > startMs))
+    .map(({ start, ...day }) => day);
+  return {
+    report: {
+      scope: "project",
+      since: startMs === null ? null : new Date(startMs).toISOString(),
+      sessions: Math.round(64 * share),
+      prompts: Math.round(311 * share),
+      assistantTurns: Math.round(5204 * share),
+      cost: 286.41 * share,
+      tokens: tokens(912_400_000),
+      byModel: [
+        row("anthropic/claude-opus-5-5", 31, 171.2, 521_300_000),
+        row("openai/gpt-6.1-terra", 18, 72.85, 248_900_000),
+        row("xai/grok-4.7", 6, 21.3, 45_800_000),
+        row("anthropic/claude-haiku-5-5", 9, 21.06, 96_400_000),
+      ],
+      byProvider: [row("anthropic", 38, 192.26, 617_700_000), row("openai", 18, 72.85, 248_900_000), row("xai", 6, 21.3, 45_800_000)],
+      byDay,
+    },
+    error: null,
+  };
+}
+
 /** Canned answers for the RPCs that would otherwise run pi on the rendering machine. */
 export function fixtures(now = Date.now()) {
   return {
@@ -549,38 +606,50 @@ export function fixtures(now = Date.now()) {
         install: { method: "release" },
         path: { shadowed: false },
         config: { files: [{ name: "settings", path: `${HOME}/.pi/agent/settings.json`, exists: true, errors: [] }] },
-        auth: { providers: [{ provider: "anthropic", authType: "oauth" }, { provider: "openai-codex", authType: "oauth" }, { provider: "xai", authType: "api_key" }] },
+        auth: { providers: demoAuth.map(([provider, authType]) => ({ provider, authType })) },
         mcp: { servers: [{ name: "context7", enabled: true, transport: "http" }, { name: "github", enabled: true, transport: "stdio" }, { name: "playwright", enabled: false, transport: "stdio" }] },
         problems: [],
         warnings: [],
       },
       error: null,
     }),
+    "pi.auth.check": ({ targets }) => ({ results: targets.map(demoAuthCheck) }),
     "pi.usage": () => ({
       report: {
         providers: [
-          { provider: "anthropic", plan: "max", windows: [{ label: "5-hour", usedPercent: 18, resetsAt: new Date(now + 3 * 3600_000).toISOString() }, { label: "Weekly", usedPercent: 42, resetsAt: new Date(now + 4 * 86_400_000).toISOString() }] },
-          { provider: "openai-codex", plan: "pro", windows: [{ label: "Weekly", usedPercent: 23, resetsAt: new Date(now + 5 * 86_400_000).toISOString() }] },
+          {
+            provider: "anthropic",
+            plan: "max",
+            windows: [
+              { label: "5-hour", usedPercent: 18, resetsAt: new Date(now + 3 * 3600_000).toISOString(), scope: "provider" },
+              { label: "Weekly", usedPercent: 42, resetsAt: new Date(now + 4 * 86_400_000).toISOString(), scope: "provider" },
+              { label: "Weekly", usedPercent: 71, resetsAt: new Date(now + 4 * 86_400_000).toISOString(), scope: "model", families: ["opus"] },
+            ],
+            error: null,
+            fetchedAt: now,
+          },
+          {
+            provider: "openai-codex",
+            plan: "pro",
+            windows: [{ label: "Weekly", usedPercent: 23, resetsAt: new Date(now + 5 * 86_400_000).toISOString(), scope: "provider" }],
+            error: null,
+            fetchedAt: now,
+            credits: { available: true, unlimited: false, balance: "12.40" },
+          },
+          {
+            provider: "xai",
+            plan: null,
+            windows: [],
+            error: "The usage endpoint is rate limited (HTTP 429). Try again later.",
+            errorKind: "rateLimited",
+            fetchedAt: now,
+            retryAfterMs: 20 * MINUTE,
+          },
         ],
       },
       error: null,
     }),
-    "pi.stats": () => ({
-      report: {
-        sessions: 64,
-        prompts: 311,
-        assistantTurns: 5204,
-        cost: 286.41,
-        tokens: { total: 912_400_000 },
-        byModel: [
-          { name: "anthropic/claude-opus-5-5", sessions: 31, cost: 171.2, tokens: { total: 521_300_000 } },
-          { name: "openai/gpt-6.1-terra", sessions: 18, cost: 72.85, tokens: { total: 248_900_000 } },
-          { name: "anthropic/claude-haiku-5-5", sessions: 9, cost: 21.06, tokens: { total: 96_400_000 } },
-          { name: "xai/grok-4.7", sessions: 6, cost: 21.3, tokens: { total: 45_800_000 } },
-        ],
-      },
-      error: null,
-    }),
+    "pi.stats": ({ since }) => demoStats(now, since),
     "pi.models": () => ({
       models: ["anthropic/claude-opus-5-5", "anthropic/claude-sonnet-5-5", "anthropic/claude-haiku-5-5", "openai/gpt-6.1-terra", "openai/gpt-6.1-sol", "xai/grok-4.7"].map((id) => {
         const [provider, model] = id.split("/");
