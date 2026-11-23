@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here. Versions follow [Semantic Versioning](https://semver.org); the release workflow writes new entries from [Conventional Commits](https://www.conventionalcommits.org).
 
+## [0.5.0] - 2026-11-23
+
+### Features
+
+- feat: MCP servers tab, sign-in readiness, interactive extension commands, and status pill fixes (#2) (8ccb02e)
+
+Changes since v0.4.0.
+
 ## [0.4.0] - 2026-11-05
 
 ### Features
