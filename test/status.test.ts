@@ -207,3 +207,16 @@ test("an active run shows behind any number of newer runs", async () => {
   );
   rmSync(runsDir, { recursive: true });
 });
+
+test("a linked run shows only on its agent, an unlinked run on every agent in its folder", async () => {
+  const approval = { task: "Merge", step: 0, askedMs: Date.now() };
+  run("wf-linked", { status: "running", approval }, { agentId: "starter" });
+  run("wf-unlinked", { status: "running", cwd: path.join(runsProject, "sub") }, { agentId: null });
+  const paseo = runsPaseo([[{ id: "starter", cwd: runsProject }], [{ id: "neighbor", cwd: runsProject }, { id: "elsewhere", cwd: project }]]);
+  const { agents } = await statusSummary(paseo);
+  const runsOf = (id: string) => agents.find((a) => a.agentId === id)!.runs;
+  assert.deepEqual(runsOf("starter"), { active: 2, approvals: 1 });
+  assert.deepEqual(runsOf("neighbor"), { active: 1, approvals: 0 });
+  assert.deepEqual(runsOf("elsewhere"), { active: 0, approvals: 0 });
+  assert.deepEqual((await agentStatus({ agentId: "neighbor" }, paseo)).runs.map((r) => r.id), ["wf-unlinked"]);
+});

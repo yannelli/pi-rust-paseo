@@ -57,9 +57,15 @@ function toAgent(raw: RawAgent): AgentInfo {
 }
 
 async function activeAgents(paseo: PaseoApi): Promise<AgentInfo[]> {
-  const result = await paseo.agents.list({ scope: "active", page: { limit: 200 } });
-  return result.entries
-    .map((entry) => (entry as unknown as { agent: RawAgent }).agent)
+  const entries: unknown[] = [];
+  let cursor: string | undefined;
+  do {
+    const result = await paseo.agents.list({ scope: "active", page: { limit: 200, cursor } });
+    entries.push(...result.entries);
+    cursor = result.pageInfo?.hasMore ? (result.pageInfo.nextCursor ?? undefined) : undefined;
+  } while (cursor);
+  return entries
+    .map((entry) => (entry as { agent: RawAgent }).agent)
     .filter((agent) => agent && !agent.archivedAt && !agent.internal)
     .map(toAgent);
 }
@@ -321,7 +327,7 @@ function within(dir: string, parent: string): boolean {
 }
 
 function runsFor(agent: AgentInfo, runs: RunSummary[]): RunSummary[] {
-  return runs.filter((run) => run.paseoAgentId === agent.id || within(run.cwd, agent.cwd));
+  return runs.filter((run) => (run.paseoAgentId ? run.paseoAgentId === agent.id : within(run.cwd, agent.cwd)));
 }
 
 /** Apps poll the summary every few seconds; apps that poll within this window share one read. */
