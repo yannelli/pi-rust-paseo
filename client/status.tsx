@@ -94,7 +94,7 @@ export function PillIcon(props: PluginButtonIconProps) {
 
 /** Polls the status of every agent and keeps one composer pill per agent that has something to show. */
 export function startStatusPills(client: PluginClientContext): () => void {
-  const pills = new Map<string, { registration: PluginButtonRegistration; label: string }>();
+  const pills = new Map<string, { registration: PluginButtonRegistration; label: string; workspaceId: string }>();
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let delay = 3000;
@@ -108,13 +108,18 @@ export function startStatusPills(client: PluginClientContext): () => void {
       const label = pillLabel(summary);
       const title = `Pi Rust: ${label === "Pi Rust" ? "nothing running" : label}`;
       const existing = pills.get(summary.agentId);
-      if (existing) {
+      if (existing?.workspaceId === summary.workspaceId) {
         // Only presentation changes: updating the behavior would close an open popover.
         if (existing.label !== label) {
           existing.registration.update({ label, title });
           existing.label = label;
         }
         continue;
+      }
+      // A pill belongs to one workspace: an agent that moved gets a new pill in its new workspace.
+      if (existing) {
+        existing.registration.remove();
+        pills.delete(summary.agentId);
       }
       try {
         const registration = client.addComposerPill({
@@ -123,7 +128,7 @@ export function startStatusPills(client: PluginClientContext): () => void {
           agentId: summary.agentId,
           button: { title, icon: PillIcon, label, behavior: { kind: "popover", Content: StatusPopover } },
         });
-        pills.set(summary.agentId, { registration, label });
+        pills.set(summary.agentId, { registration, label, workspaceId: summary.workspaceId });
       } catch (error) {
         console.error("Pi Rust status pill", error);
       }
@@ -204,7 +209,7 @@ function AgentStatus({ agentId, close }: { agentId: string; close: () => void })
   const approvals = (data?.runs ?? []).filter((run) => isActive(run.status) && !run.stale && run.approval);
   const empty = data && data.tasks.length === 0 && data.runs.length === 0 && data.goals.length === 0 && data.timers.length === 0;
   return (
-    <View style={{ width: compact ? undefined : 420, gap: 16 }}>
+    <View style={{ width: compact ? undefined : 420, maxWidth: "100%", gap: 16 }}>
       <Row justify="space-between">
         <Row gap={8}>
           <BrandMark size={18} />
@@ -242,7 +247,11 @@ function AgentStatus({ agentId, close }: { agentId: string; close: () => void })
         <Empty
           icon="Coffee"
           title="Nothing running"
-          body={data?.agent.isPi ? "Background tasks, workflow runs, goals, and timers of this pi session show here." : "Workflow runs in this workspace show here."}
+          body={
+            data?.agent.isPi
+              ? "Background tasks, goals, and timers of this pi session show here, with workflow runs this agent started and runs in its folder that no other Paseo agent started."
+              : "Workflow runs this agent started show here, with runs in its folder that no other Paseo agent started."
+          }
         />
       ) : null}
     </View>
@@ -337,7 +346,15 @@ function TaskDetail({ task, sessionId }: { task: BgTask; sessionId: string }) {
           {task.error}
         </Txt>
       ) : null}
-      {log.data?.text ? <CodeBlock text={log.data.truncated ? `…\n${log.data.text}` : log.data.text} maxHeight={200} /> : log.isLoading ? null : <Txt size="xs" tone="muted">No output yet.</Txt>}
+      {log.data?.text ? (
+        <CodeBlock text={log.data.truncated ? `…\n${log.data.text}` : log.data.text} maxHeight={200} follow />
+      ) : log.error ? (
+        <ErrorBox title="Cannot read the task output" error={log.error} />
+      ) : log.isLoading ? null : (
+        <Txt size="xs" tone="muted">
+          No output yet.
+        </Txt>
+      )}
       <Row justify="space-between">
         <Txt size="xs" tone="muted">
           {`${task.id}${task.timeoutSeconds ? ` · times out after ${formatDuration(task.timeoutSeconds)}` : ""}`}

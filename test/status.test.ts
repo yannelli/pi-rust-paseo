@@ -2,13 +2,14 @@
 // agent directory, with a real detached process for the running task.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { pluginSettings } from "../shared/contracts";
 import { pillLabel, pillVisible } from "../shared/status";
 import { applySettings } from "../server/pi";
+import { listRuns } from "../server/runs";
 import { agentStatus, projectSlug, readGoals, readTasks, readTimers, statusSummary, stopTask, taskLog } from "../server/status";
 
 const root = mkdtempSync(path.join(tmpdir(), "pi-rust-status-"));
@@ -152,4 +153,70 @@ test("stopping a task signals its process group and records it", async () => {
   const saved = JSON.parse(readFileSync(path.join(tasks, "run1", "task.json"), "utf8")) as { status: string; error: string };
   assert.deepEqual([saved.status, saved.error], ["killed", "stopped from Paseo"]);
   await assert.rejects(stopTask({ sessionId: session, taskId: "run1" }), /not running/);
+});
+
+// Workflow runs in their own folder, so they do not change the summaries above.
+const runsProject = path.join(root, "runs-project");
+const runsDir = path.join(agentDir, "ext", "workflows", "runs");
+
+function run(id: string, fields: Record<string, unknown>, link?: { agentId: string | null }) {
+  const dir = path.join(runsDir, id);
+  mkdirSync(dir, { recursive: true });
+  const now = Date.now();
+  writeFileSync(path.join(dir, "run.json"), JSON.stringify({ id, workflow: { name: id, steps: [] }, cwd: runsProject, status: "done", startedMs: now, endedMs: now, heartbeatMs: now, ...fields }));
+  if (link) writeFileSync(path.join(dir, "paseo.json"), JSON.stringify({ origin: "user", ...link }));
+}
+
+function runsPaseo(pages: { id: string; cwd: string }[][]) {
+  const agent = (id: string, cwd: string) => ({ id, provider: "claude", cwd, workspaceId: "wks-3" });
+  const all = pages.flat();
+  return {
+    agents: {
+      list: async ({ page }: { page: { cursor?: string } }) => {
+        const index = Number(page.cursor ?? 0);
+        const hasMore = index + 1 < pages.length;
+        return { entries: pages[index].map((a) => ({ agent: agent(a.id, a.cwd) })), pageInfo: { hasMore, nextCursor: hasMore ? String(index + 1) : null, prevCursor: null } };
+      },
+      ref: (id: string) => ({ refresh: async () => null, current: () => agent(id, all.find((a) => a.id === id)!.cwd) }),
+    },
+  } as never;
+}
+
+test("the run list reads a run again only after it changes, and forgets deleted runs", async () => {
+  run("wf-cache", { status: "running" });
+  const first = (await listRuns({ cwd: runsProject })).runs.find((r) => r.id === "wf-cache")!;
+  assert.deepEqual([first.status, first.paseoAgentId], ["running", null]);
+  run("wf-cache", { status: "failed", error: "boom" }, { agentId: "linked" });
+  const changed = (await listRuns({ cwd: runsProject })).runs.find((r) => r.id === "wf-cache")!;
+  assert.deepEqual([changed.status, changed.error, changed.paseoAgentId], ["failed", "boom", "linked"]);
+  rmSync(path.join(runsDir, "wf-cache"), { recursive: true });
+  assert.equal((await listRuns({ cwd: runsProject })).runs.some((r) => r.id === "wf-cache"), false);
+});
+
+test("an active run shows behind any number of newer runs", async () => {
+  const now = Date.now();
+  run("wf-old-active", { status: "running", startedMs: now - 3_600_000 });
+  for (let i = 0; i < 310; i++) run(`wf-new-${String(i).padStart(3, "0")}`, { startedMs: now - i * 1000 });
+  const paseo = runsPaseo([[{ id: "runner", cwd: runsProject }]]);
+  const summary = (await statusSummary(paseo)).agents.find((a) => a.agentId === "runner")!;
+  assert.deepEqual(summary.runs, { active: 1, approvals: 0 });
+  const full = await agentStatus({ agentId: "runner" }, paseo);
+  assert.deepEqual(
+    full.runs.map((r) => r.id),
+    ["wf-old-active", "wf-new-000", "wf-new-001", "wf-new-002", "wf-new-003", "wf-new-004"],
+  );
+  rmSync(runsDir, { recursive: true });
+});
+
+test("a linked run shows only on its agent, an unlinked run on every agent in its folder", async () => {
+  const approval = { task: "Merge", step: 0, askedMs: Date.now() };
+  run("wf-linked", { status: "running", approval }, { agentId: "starter" });
+  run("wf-unlinked", { status: "running", cwd: path.join(runsProject, "sub") }, { agentId: null });
+  const paseo = runsPaseo([[{ id: "starter", cwd: runsProject }], [{ id: "neighbor", cwd: runsProject }, { id: "elsewhere", cwd: project }]]);
+  const { agents } = await statusSummary(paseo);
+  const runsOf = (id: string) => agents.find((a) => a.agentId === id)!.runs;
+  assert.deepEqual(runsOf("starter"), { active: 2, approvals: 1 });
+  assert.deepEqual(runsOf("neighbor"), { active: 1, approvals: 0 });
+  assert.deepEqual(runsOf("elsewhere"), { active: 0, approvals: 0 });
+  assert.deepEqual((await agentStatus({ agentId: "neighbor" }, paseo)).runs.map((r) => r.id), ["wf-unlinked"]);
 });

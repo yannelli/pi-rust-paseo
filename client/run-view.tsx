@@ -7,7 +7,7 @@ import { runFilesRpc, runGetRpc, runOutputRpc, runSteerRpc } from "../shared/con
 import { costLabel, isActive, type OutputEntry, type RunDetail, type StepRun, type StepStatus } from "../shared/runs";
 import { formatDuration } from "../shared/workflow";
 import { poll, useRpcMutation, useRpcQuery } from "./queries";
-import { ApprovalButtons, RunStatusBadge, StepBar, elapsedLabel, useNow, useRunControl, waitLeft } from "./runs";
+import { ApprovalButtons, RunStatusBadge, StepBar, elapsedLabel, runRefresh, useNow, useRunControl, waitLeft } from "./runs";
 import { WorkspaceChip } from "./workspaces";
 import {
   Badge,
@@ -18,6 +18,7 @@ import {
   Empty,
   ErrorBox,
   Field,
+  FitWidth,
   KeyValue,
   Notice,
   Row,
@@ -63,17 +64,21 @@ function shortModel(model: string | null): string {
   return slash >= 0 ? model.slice(slash + 1) : model;
 }
 
-export function RunView({ id, onBack }: { id: string; onBack?: () => void }) {
+/** Side by side, the step list takes 300px; narrower containers stack it above the detail. */
+export function RunView(props: { id: string; onBack?: () => void }) {
+  return (
+    <FitWidth below={760}>
+      <RunBody {...props} />
+    </FitWidth>
+  );
+}
+
+function RunBody({ id, onBack }: { id: string; onBack?: () => void }) {
   const { compact } = useUi();
   const query = useRpcQuery(
     runGetRpc,
     { id },
-    {
-      refetchInterval: (state) => {
-        const run = state.state.data?.run;
-        return run && live(run) ? 1000 : false;
-      },
-    },
+    { refetchInterval: (state) => runRefresh(state.state.data?.run, 1000) },
   );
   const run = query.data?.run;
   const active = run ? live(run) : false;

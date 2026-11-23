@@ -94,6 +94,7 @@ const shots = [
     height: 1300,
   },
   { name: "context", query: { tab: "context", cwd: WORKTREE }, height: 1300 },
+  { name: "mcp", query: { tab: "mcp", cwd: WORKTREE }, height: 960 },
   { name: "subscriptions", query: { tab: "subscriptions", cwd: WORKTREE }, height: 1900 },
   {
     name: "deferred",
@@ -107,7 +108,7 @@ const shots = [
       await page.getByPlaceholder("mcp__github__create_issue").fill("mcp__github__delete_repo");
     },
   },
-  { name: "composer", query: { view: "composer", w: "720" }, width: 720, height: 1040, element: { selector: "#popover", name: "popover" } },
+  { name: "composer", query: { view: "composer", w: "720" }, width: 720, height: 640, element: { selector: "#popover", name: "popover" } },
   { name: "mobile-runs", query: { tab: "runs", cwd: WORKTREE, compact: "1" }, compact: true },
   { name: "mobile-composer", query: { view: "composer", compact: "1" }, compact: true },
   { name: "mobile-overview-light", query: { tab: "overview", cwd: WORKTREE, compact: "1", theme: "light" }, compact: true },
@@ -167,8 +168,8 @@ function heroHtml() {
   .pop img { display: block; width: 340px; }
   </style></head><body><div class="canvas"><div class="grid"></div>
   <div class="copy">${mark}<h1>Pi Rust<br/><span>for Paseo</span></h1>
-  <p>Manage pi, its extensions, subscriptions, Claude plugins, skills, context, and live multi-agent workflows from the Paseo app, on desktop and phone.</p>
-  <div class="chips"><span class="chip">Live workflow runs</span><span class="chip">Approvals</span><span class="chip">Worktrees</span><span class="chip">Subscriptions</span><span class="chip">Claude plugins</span><span class="chip">Skills</span><span class="chip">Context</span><span class="chip">Background tasks</span></div></div>
+  <p>Manage pi, its extensions, MCP servers, subscriptions, Claude plugins, skills, context, and live multi-agent workflows from the Paseo app, on desktop and phone.</p>
+  <div class="chips"><span class="chip">Live workflow runs</span><span class="chip">Approvals</span><span class="chip">Worktrees</span><span class="chip">MCP servers</span><span class="chip">Subscriptions</span><span class="chip">Claude plugins</span><span class="chip">Skills</span><span class="chip">Context</span><span class="chip">Background tasks</span></div></div>
   <div class="window"><div class="bar"><i></i><i></i><i></i></div><img src="/assets/screenshots/run.png"/></div>
   <div class="pop"><img src="/assets/screenshots/popover.png"/></div>
   </div></body></html>`;

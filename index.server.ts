@@ -1,7 +1,9 @@
 import type { PaseoApi } from "./server/paseo";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { pluginSettings } from "./shared/contracts";
+import { stopCommandSessions } from "./server/extensions";
 import { registerHandlers } from "./server/handlers";
+import { stopLogins } from "./server/mcp";
 import { applySettings, currentSettings } from "./server/pi";
 import { releaseRuns, startWatcher } from "./server/runs";
 import { agentTools } from "./server/tools";
@@ -33,7 +35,9 @@ export default function contribute(server: PluginServerContext) {
 
   return async () => {
     stopWatcher();
+    stopCommandSessions();
     unsubscribe();
+    stopLogins();
     await releaseRuns();
   };
 }

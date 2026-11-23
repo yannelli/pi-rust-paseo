@@ -7,7 +7,7 @@ import { runGetRpc, type RunCard } from "../shared/contracts";
 import { costLabel, isActive, type RunDetail } from "../shared/runs";
 import { openRun } from "./host";
 import { useRpcQuery } from "./queries";
-import { ApprovalButtons, RunStatusBadge, StepBar, elapsedLabel, useNow, useRunControl, waitLeft } from "./runs";
+import { ApprovalButtons, RunStatusBadge, StepBar, elapsedLabel, runRefresh, useNow, useRunControl, waitLeft } from "./runs";
 import { WorkspaceChip } from "./workspaces";
 import { Button, ErrorBox, Row, Spinner, Stack, StatusDot, Txt, UiProvider, errorMessage, relativeTime, tint, useUi } from "./ui";
 
@@ -53,12 +53,7 @@ function RunCardBody({ runId, workflow }: { runId: string; workflow: string }) {
   const query = useRpcQuery(
     runGetRpc,
     { id: runId },
-    {
-      refetchInterval: (state) => {
-        const run = state.state.data?.run;
-        return run && live(run) ? 2000 : false;
-      },
-    },
+    { refetchInterval: (state) => runRefresh(state.state.data?.run, 2000) },
   );
   const run = query.data?.run;
   const active = run ? live(run) : false;

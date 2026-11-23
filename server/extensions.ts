@@ -1,11 +1,18 @@
-// Using extensions from Paseo: their commands (run in a short-lived pi), their config files, and
-// the rules of the `deferred` extension.
+// Using extensions from Paseo: their commands (run in a short-lived pi, which can ask the user
+// through Paseo), their config files, and the rules of the `deferred` extension.
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { RpcInput, RpcOutput } from "@getpaseo/plugin";
 import type {
+  CommandDialog,
+  CommandStep,
   ExtensionCommand,
+  ExtensionCommandResult,
+  extensionCommandAnswerRpc,
   extensionCommandRunRpc,
+  extensionCommandStartRpc,
+  extensionCommandStopRpc,
   extensionCommandsRpc,
   extensionConfigReadRpc,
   extensionConfigWriteRpc,
@@ -14,7 +21,7 @@ import { canonicalMode, DEFERRED_KINDS, type deferredConfigRpc, type deferredOpt
 import { prettyJson, readJson, readText, writeAtomic } from "./fsutil";
 import { readSettingsObject, settingsPath } from "./manage";
 import { agentDir, projectDir } from "./pi";
-import { withPiRpc } from "./rpc";
+import { type PiRpc, withPiRpc } from "./rpc";
 import { projectTrusted } from "./trust";
 
 // Commands --------------------------------------------------------------------------------------
@@ -62,45 +69,230 @@ export async function extensionCommands({ cwd, refresh }: RpcInput<typeof extens
 /** Notices pi sends while it shuts a session down; they are not the command's output. */
 const SHUTDOWN_NOISE = /exited with signal|session_shutdown/;
 
+async function requireCommand(cwd: string, command: string): Promise<void> {
+  const known = await listCommands(cwd);
+  if (!known.some((entry) => entry.name === command)) throw new Error(`/${command} is not a command of an installed extension.`);
+}
+
 /**
  * Runs `/<command> <args>` of an installed extension in a temporary pi session and returns what
  * the extension reported. A command that starts an agent turn is stopped: nobody watches this session.
  */
 export async function runExtensionCommand({ cwd, command, args }: RpcInput<typeof extensionCommandRunRpc>): Promise<RpcOutput<typeof extensionCommandRunRpc>> {
   const dir = cwd ?? process.cwd();
-  const known = await listCommands(dir);
-  if (!known.some((entry) => entry.name === command)) throw new Error(`/${command} is not a command of an installed extension.`);
+  await requireCommand(dir, command);
   return runSlash(dir, command, args);
 }
 
-/** Runs `/<command> <args>` in a temporary pi session in `cwd`; see `runExtensionCommand`. */
-export function runSlash(cwd: string, command: string, args: string, timeoutMs?: number): Promise<RpcOutput<typeof extensionCommandRunRpc>> {
-  return withPiRpc(
+/** Runs `/<command> <args>` in a temporary pi session in `cwd` and cancels its dialogs; see `runExtensionCommand`. */
+export function runSlash(cwd: string, command: string, args: string, timeoutMs?: number): Promise<ExtensionCommandResult> {
+  return withPiRpc(cwd, (rpc) => slash(rpc, command, args), timeoutMs);
+}
+
+function commandOutput(rpc: PiRpc, firstNotice: number) {
+  return rpc.notices.slice(firstNotice).filter((notice) => !SHUTDOWN_NOISE.test(notice.text));
+}
+
+async function slash(rpc: PiRpc, command: string, args: string): Promise<ExtensionCommandResult> {
+  // Extensions may notify or ask while pi starts; only what follows the command is its output.
+  const firstNotice = rpc.notices.length;
+  const dialogsBefore = rpc.dialogs;
+  const response = await rpc.request({ type: "prompt", message: `/${command}${args.trim() ? ` ${args.trim()}` : ""}` });
+  // A question of the command comes before pi answers it; later ones come from other
+  // extensions reacting to the run, such as hooks asking to run.
+  const neededUi = rpc.dialogs > dialogsBefore;
+  const data = (response.data ?? {}) as { disposition?: string; agentInvoked?: boolean };
+  if (data.agentInvoked) await rpc.request({ type: "abort" });
+  // Extensions may notify just after pi answers; give them a moment.
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  if (response.success === false) {
+    return { disposition: "error", agentInvoked: false, output: [{ level: "error", text: String(response.error ?? "pi refused the command") }], neededUi };
+  }
+  return { disposition: data.disposition ?? "handled", agentInvoked: Boolean(data.agentInvoked), output: commandOutput(rpc, firstNotice), neededUi };
+}
+
+// Interactive commands ----------------------------------------------------------------------------
+
+/** How long a dialog waits for the user before the plugin stops the command. */
+const DIALOG_IDLE_MS = 5 * 60_000;
+/** How long pi may work between dialogs. */
+const COMMAND_WORK_MS = 60_000;
+/** pi drops a dialog when its own timeout ends; the plugin drops it a little earlier, so no late answer counts. */
+const DIALOG_EXPIRY_MARGIN_MS = 250;
+
+interface WaitingDialog {
+  dialog: CommandDialog;
+  expiresAt: number | null;
+  timer?: NodeJS.Timeout;
+}
+
+interface CommandSession {
+  id: string;
+  command: string;
+  idleMs: number;
+  rpc: PiRpc | null;
+  firstNotice: number;
+  /** Dialogs in the order pi opened them; the client answers the first. */
+  dialogs: WaitingDialog[];
+  outcome: { result: ExtensionCommandResult } | { error: Error } | null;
+  timer?: NodeJS.Timeout;
+  stop(error: Error): void;
+  /** Steps that wait for the next change. */
+  waiters: Array<() => void>;
+}
+
+const commandSessions = new Map<string, CommandSession>();
+
+function dialogFrom(record: Record<string, unknown>): CommandDialog {
+  const text = (value: unknown) => (typeof value === "string" ? value : null);
+  return {
+    id: String(record.id),
+    method: record.method as CommandDialog["method"],
+    title: text(record.title) ?? "",
+    message: text(record.message),
+    options: Array.isArray(record.options) ? record.options.map((option) => (typeof option === "string" ? option : JSON.stringify(option))) : [],
+    placeholder: text(record.placeholder),
+    prefill: text(record.prefill),
+    secret: record.secret === true,
+    timeoutMs: typeof record.timeout === "number" && record.timeout > 0 ? record.timeout : null,
+  };
+}
+
+/**
+ * Wakes the steps that wait on the session and restarts the time limit of its state: an unanswered
+ * dialog, pi at work, or a result nobody collected.
+ */
+function changed(session: CommandSession): void {
+  clearTimeout(session.timer);
+  session.timer = session.outcome
+    ? setTimeout(() => commandSessions.delete(session.id), session.idleMs)
+    : session.dialogs.length
+      ? setTimeout(() => endSession(session, new Error(`Nobody answered /${session.command} in time, so it was stopped. Run it again.`)), session.idleMs)
+      : setTimeout(() => endSession(session, new Error("pi did not answer in time")), COMMAND_WORK_MS);
+  session.timer.unref();
+  for (const wake of session.waiters.splice(0)) wake();
+}
+
+function dropDialog(session: CommandSession, id: string): WaitingDialog | null {
+  const index = session.dialogs.findIndex((waiting) => waiting.dialog.id === id);
+  if (index < 0) return null;
+  const [waiting] = session.dialogs.splice(index, 1);
+  clearTimeout(waiting.timer);
+  return waiting;
+}
+
+/** Stops the session's pi; its error answers the next step. */
+function endSession(session: CommandSession, error: Error): void {
+  for (const waiting of session.dialogs) clearTimeout(waiting.timer);
+  session.dialogs = [];
+  session.stop(error);
+}
+
+/** The next dialog of the session or its result; waits while pi works. */
+async function nextStep(session: CommandSession): Promise<CommandStep> {
+  for (;;) {
+    const { outcome } = session;
+    if (outcome) {
+      commandSessions.delete(session.id);
+      clearTimeout(session.timer);
+      if ("error" in outcome) throw outcome.error;
+      return { status: "done", result: outcome.result };
+    }
+    const waiting = session.dialogs[0];
+    if (waiting && session.rpc) {
+      const timeoutMs = waiting.expiresAt === null ? null : Math.max(0, waiting.expiresAt - Date.now());
+      return { status: "waiting", session: session.id, dialog: { ...waiting.dialog, timeoutMs }, output: commandOutput(session.rpc, session.firstNotice) };
+    }
+    await new Promise<void>((resolve) => session.waiters.push(resolve));
+  }
+}
+
+/** Starts `/<command> <args>` in a pi that stays up while the command waits on a dialog. */
+export function startCommandSession(cwd: string, command: string, args: string, idleMs = DIALOG_IDLE_MS): Promise<CommandStep> {
+  let stop: (error: Error) => void = () => {};
+  const stopped = new Promise<never>((_resolve, reject) => {
+    stop = reject;
+  });
+  const session: CommandSession = {
+    id: randomUUID(),
+    command,
+    idleMs,
+    rpc: null,
+    firstNotice: 0,
+    dialogs: [],
+    outcome: null,
+    stop,
+    waiters: [],
+  };
+  commandSessions.set(session.id, session);
+  withPiRpc(
     cwd,
-    async (rpc) => {
-      // Extensions may notify or ask while pi starts; only what follows the command is its output.
-      const firstNotice = rpc.notices.length;
-      const dialogsBefore = rpc.dialogs;
-      const response = await rpc.request({ type: "prompt", message: `/${command}${args.trim() ? ` ${args.trim()}` : ""}` });
-      // A question of the command comes before pi answers it; later ones come from other
-      // extensions reacting to the run, such as hooks asking to run.
-      const neededUi = rpc.dialogs > dialogsBefore;
-      const data = (response.data ?? {}) as { disposition?: string; agentInvoked?: boolean };
-      if (data.agentInvoked) await rpc.request({ type: "abort" });
-      // Extensions may notify just after pi answers; give them a moment.
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      if (response.success === false) {
-        return { disposition: "error", agentInvoked: false, output: [{ level: "error", text: String(response.error ?? "pi refused the command") }], neededUi };
-      }
-      return {
-        disposition: data.disposition ?? "handled",
-        agentInvoked: Boolean(data.agentInvoked),
-        output: rpc.notices.slice(firstNotice).filter((notice) => !SHUTDOWN_NOISE.test(notice.text)),
-        neededUi,
+    (rpc) => {
+      session.rpc = rpc;
+      session.firstNotice = rpc.notices.length;
+      rpc.onDialog = (record) => {
+        const waiting: WaitingDialog = { dialog: dialogFrom(record), expiresAt: null };
+        if (waiting.dialog.timeoutMs !== null) {
+          const lifetime = Math.max(0, waiting.dialog.timeoutMs - DIALOG_EXPIRY_MARGIN_MS);
+          waiting.expiresAt = Date.now() + lifetime;
+          waiting.timer = setTimeout(() => {
+            if (dropDialog(session, waiting.dialog.id)) changed(session);
+          }, lifetime);
+          waiting.timer.unref();
+        }
+        session.dialogs.push(waiting);
+        changed(session);
       };
+      return Promise.race([slash(rpc, command, args), stopped]);
     },
-    timeoutMs,
-  );
+    null,
+  )
+    .then(
+      (result) => ({ result }),
+      (error: Error) => ({ error }),
+    )
+    .then((outcome) => {
+      session.outcome = outcome;
+      changed(session);
+    });
+  changed(session);
+  return nextStep(session);
+}
+
+function sessionOf(id: string): CommandSession {
+  const session = commandSessions.get(id);
+  if (!session) throw new Error("This command is no longer running. Run it again.");
+  return session;
+}
+
+export async function startExtensionCommand({ cwd, command, args }: RpcInput<typeof extensionCommandStartRpc>): Promise<RpcOutput<typeof extensionCommandStartRpc>> {
+  const dir = cwd ?? process.cwd();
+  await requireCommand(dir, command);
+  return startCommandSession(dir, command, args);
+}
+
+export async function answerExtensionCommand({ session: id, dialog, answer }: RpcInput<typeof extensionCommandAnswerRpc>): Promise<RpcOutput<typeof extensionCommandAnswerRpc>> {
+  const session = sessionOf(id);
+  if (dropDialog(session, dialog)) {
+    session.rpc?.respond(dialog, answer);
+    changed(session);
+  }
+  return nextStep(session);
+}
+
+export function stopExtensionCommand({ session: id }: RpcInput<typeof extensionCommandStopRpc>): RpcOutput<typeof extensionCommandStopRpc> {
+  const session = commandSessions.get(id);
+  if (session) {
+    commandSessions.delete(id);
+    endSession(session, new Error(`/${session.command} was stopped.`));
+  }
+  return { stopped: Boolean(session) };
+}
+
+/** Stops every interactive command, when the plugin unloads. */
+export function stopCommandSessions(): void {
+  for (const session of commandSessions.values()) endSession(session, new Error("The plugin stopped."));
+  commandSessions.clear();
 }
 
 // Config files ----------------------------------------------------------------------------------

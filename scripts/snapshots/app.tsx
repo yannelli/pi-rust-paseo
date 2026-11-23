@@ -3,7 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { setClient } from "../../client/host";
 import { ManagerScreen, WorkflowsPanel } from "../../client/manager";
 import { startStatusPills } from "../../client/status";
@@ -30,14 +30,18 @@ const host = { id: "demo", label: "devbox" };
 const navigation = { openAgent() {}, openWorkspace() {} };
 setClient({ openScreen() {} } as any);
 const params: Record<string, string> = {};
-for (const key of ["tab", "run", "cwd", "edit", "scope"]) if (q.get(key)) params[key] = q.get(key)!;
+for (const key of ["tab", "run", "cwd", "edit", "new", "scope"]) if (q.get(key)) params[key] = q.get(key)!;
 const view = q.get("view") ?? "manager";
 const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 (window as any).__queries = queries;
 const tab = { setModified() {}, state: undefined, setState() {} };
 const common = { theme, layout, host, navigation } as any;
 
-/** A composer like Paseo's: built-in pills, the Pi Rust pill, and its open popover. */
+/**
+ * A composer like Paseo's: built-in pills, the Pi Rust pill, and its open popover in a surface
+ * sized like Paseo's (at most 420px wide with its border, 440px tall, scrolling, content padded 12px).
+ * Phones get a full-width sheet.
+ */
 function Composer() {
   const [pills, setPills] = useState<any[]>([]);
   useEffect(
@@ -74,8 +78,13 @@ function Composer() {
   return (
     <View style={{ padding: compact ? 12 : 20, gap: 10, justifyContent: "flex-end", minHeight: "100vh" as any }}>
       {Content ? (
-        <View nativeID="popover" style={{ alignSelf: "flex-start", backgroundColor: c.surface0, borderColor: c.border, borderWidth: 1, borderRadius: 14, padding: 14, maxWidth: compact ? 366 : undefined, boxShadow: "0 18px 50px rgba(0,0,0,0.35)" } as any}>
-          <Content {...common} {...target} close={() => {}} />
+        <View
+          nativeID="popover"
+          style={{ alignSelf: compact ? "stretch" : "flex-start", minWidth: 280, maxWidth: compact ? undefined : Math.min(420, width - 16), maxHeight: compact ? undefined : 440, backgroundColor: c.surface0, borderColor: c.border, borderWidth: 1, borderRadius: 14, overflow: "hidden", boxShadow: "0 18px 50px rgba(0,0,0,0.35)" } as any}
+        >
+          <ScrollView contentContainerStyle={{ padding: 12 }}>
+            <Content {...common} {...target} close={() => {}} />
+          </ScrollView>
         </View>
       ) : null}
       <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>

@@ -25,7 +25,7 @@ const paseo = {
       throw new Error("The demo does not create worktrees.");
     },
   },
-  agents: { list: async () => ({ entries: [] }), ref: () => ({}) },
+  agents: { list: async () => ({ entries: [] }), ref: () => ({}), create: async () => ({ id: "agent-demo-new" }) },
 };
 
 export function usePaseo() {

@@ -9,6 +9,7 @@ import { isActive } from "../shared/runs";
 import { ContextTab } from "./context";
 import { ExtensionsTab } from "./extensions";
 import { lastCwd, rememberCwd, type ManagerTab } from "./host";
+import { McpTab } from "./mcp";
 import { OverviewTab } from "./overview";
 import { PluginsTab } from "./plugins";
 import { useRpcQuery } from "./queries";
@@ -17,13 +18,14 @@ import { RunsList } from "./runs";
 import { SessionsTab } from "./sessions";
 import { SkillsTab } from "./skills";
 import { SubscriptionsTab } from "./subscriptions";
-import { Badge, BrandMark, Row, Stack, TabBar, Txt, UiProvider, shortPath, useUi, type Navigation } from "./ui";
+import { Badge, BrandMark, FitWidth, Row, Stack, TabBar, Txt, UiProvider, shortPath, useUi, type Navigation } from "./ui";
 import { WorkflowsTab } from "./workflows";
 import { kindIcon, useWorkspaceIndex, WorkspaceChip, WorkspacePickerModal } from "./workspaces";
 
 const TABS: readonly { id: ManagerTab; label: string; icon: string }[] = [
   { id: "overview", label: "Overview", icon: "LayoutDashboard" },
   { id: "extensions", label: "Extensions", icon: "Puzzle" },
+  { id: "mcp", label: "MCP", icon: "Plug" },
   { id: "subscriptions", label: "Subscriptions", icon: "Gauge" },
   { id: "plugins", label: "Claude plugins", icon: "Store" },
   { id: "skills", label: "Skills", icon: "Sparkles" },
@@ -51,7 +53,9 @@ function runsBadge(counts: { active: number; approvals: number }) {
 export function ManagerScreen({ theme, layout, params, navigation }: PluginScreenProps) {
   return (
     <UiProvider theme={theme} compact={layout.compact} navigation={navigation as Navigation | undefined}>
-      <Manager params={params} />
+      <FitWidth style={{ flex: 1 }}>
+        <Manager params={params} />
+      </FitWidth>
     </UiProvider>
   );
 }
@@ -97,17 +101,27 @@ function WorkspaceSwitcher({ cwd, onPress }: { cwd: string; onPress: () => void 
   );
 }
 
+type EditorRequest = { edit: { name: string; scope: "global" | "project" } | null; newScope: "global" | "project" | null };
+
+/** The editor the screen params ask for: `edit` opens a workflow, `new` a new one. */
+function editorRequest(params: Record<string, string>): EditorRequest | null {
+  const scope = params.scope === "project" ? ("project" as const) : ("global" as const);
+  if (params.edit) return { edit: { name: params.edit, scope }, newScope: null };
+  return params.new ? { edit: null, newScope: scope } : null;
+}
+
 function Manager({ params }: { params: Record<string, string> }) {
   const { theme, compact } = useUi();
   const [tab, setTab] = useState<ManagerTab>(isTab(params.tab) ? params.tab : params.run ? "runs" : "overview");
   const [cwd, setCwdState] = useState(params.cwd ?? lastCwd());
   const [run, setRun] = useState<string | null>(params.run ?? null);
   const [picking, setPicking] = useState(false);
+  // Opened once: switching tabs drops it, so coming back shows the list.
+  const [opening, setOpening] = useState<EditorRequest | null>(() => editorRequest(params));
   const setCwd = (dir: string) => {
     setCwdState(dir);
     rememberCwd(dir);
   };
-  const edit = params.edit ? { name: params.edit, scope: params.scope === "project" ? ("project" as const) : ("global" as const) } : null;
   useEffect(() => {
     if (isTab(params.tab)) setTab(params.tab);
     if (params.run) {
@@ -115,8 +129,12 @@ function Manager({ params }: { params: Record<string, string> }) {
       setTab("runs");
     }
     if (params.cwd) setCwd(params.cwd);
-    if (params.edit) setTab("workflows");
-  }, [params.tab, params.run, params.cwd, params.edit]);
+    const request = editorRequest(params);
+    if (request) {
+      setOpening(request);
+      setTab("workflows");
+    }
+  }, [params.tab, params.run, params.cwd, params.edit, params.new, params.scope]);
   const overview = useRpcQuery(overviewRpc, { cwd: cwd || undefined }, { staleTime: 30_000 });
   const counts = useRunCounts();
   const openRun = (id: string) => {
@@ -149,17 +167,19 @@ function Manager({ params }: { params: Record<string, string> }) {
           value={tab}
           onChange={(next) => {
             setTab(next);
+            setOpening(null);
             if (next !== "runs") setRun(null);
           }}
         />
         <Stack gap={16}>
           {tab === "overview" ? <OverviewTab cwd={cwd} onNavigate={setTab} /> : null}
           {tab === "extensions" ? <ExtensionsTab cwd={cwd} onNavigate={setTab} /> : null}
+          {tab === "mcp" ? <McpTab cwd={cwd} /> : null}
           {tab === "subscriptions" ? <SubscriptionsTab /> : null}
           {tab === "plugins" ? <PluginsTab cwd={cwd} /> : null}
           {tab === "skills" ? <SkillsTab cwd={cwd} onOpenPlugins={() => setTab("plugins")} /> : null}
           {tab === "context" ? <ContextTab cwd={cwd} /> : null}
-          {tab === "workflows" ? <WorkflowsTab cwd={cwd} onOpenRun={openRun} initialEdit={edit} /> : null}
+          {tab === "workflows" ? <WorkflowsTab cwd={cwd} onOpenRun={openRun} initialEdit={opening?.edit ?? null} initialNew={opening?.newScope ?? null} /> : null}
           {tab === "runs" ? run ? <RunView id={run} onBack={() => setRun(null)} /> : <RunsList cwd={cwd || undefined} scopeToggle onOpen={setRun} /> : null}
           {tab === "sessions" ? <SessionsTab cwd={cwd} /> : null}
         </Stack>
@@ -174,7 +194,9 @@ type PanelTab = "workflows" | "runs";
 export function WorkflowsPanel({ theme, layout, workspaceId, navigation }: PluginWorkspacePanelProps) {
   return (
     <UiProvider theme={theme} compact={layout.compact} navigation={navigation as Navigation | undefined}>
-      <Panel workspaceId={workspaceId} />
+      <FitWidth style={{ flex: 1 }}>
+        <Panel workspaceId={workspaceId} />
+      </FitWidth>
     </UiProvider>
   );
 }

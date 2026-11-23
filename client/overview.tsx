@@ -4,6 +4,7 @@ import { Icon } from "@getpaseo/plugin/client/ui";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { View } from "react-native";
 import {
+  authCheckRpc,
   defaultsWriteRpc,
   doctorRpc,
   extensionsListRpc,
@@ -15,6 +16,8 @@ import {
   updateRpc,
   usageRpc,
   workflowsListRpc,
+  type AuthCheck,
+  type AuthTarget,
   type ScopeName,
 } from "../shared/contracts";
 import { statsRowName, type StatsRow } from "../shared/stats";
@@ -42,6 +45,7 @@ import {
   shortPath,
   tint,
   useUi,
+  type Tone,
 } from "./ui";
 import { WorkspaceNotices } from "./workspaces";
 
@@ -67,7 +71,7 @@ export function OverviewTab({ cwd, onNavigate }: { cwd: string; onNavigate: (tab
           <Maintenance overview={overview.data} />
         </Stack>
         <Stack gap={16} style={{ flex: 1, alignSelf: "stretch" }}>
-          <Health cwd={cwd} />
+          <Health cwd={cwd} onOpenMcp={() => onNavigate("mcp")} />
           <Limits />
         </Stack>
       </View>
@@ -118,9 +122,13 @@ function CardTitle({ icon, title, right }: { icon: string; title: string; right?
   const { theme } = useUi();
   return (
     <Row justify="space-between" gap={8}>
-      <Row gap={8}>
-        <Icon name={icon} size={16} color={theme.colors.foregroundMuted} />
-        <Txt weight="600">{title}</Txt>
+      <Row gap={8} style={{ flexShrink: 1 }}>
+        <View style={{ flexShrink: 0 }}>
+          <Icon name={icon} size={16} color={theme.colors.foregroundMuted} />
+        </View>
+        <Txt weight="600" style={{ flexShrink: 1 }}>
+          {title}
+        </Txt>
       </Row>
       {right}
     </Row>
@@ -142,8 +150,10 @@ function Defaults({ defaults }: { defaults: Overview["defaults"] }) {
     setFilter("");
   };
   useEffect(reset, [defaults.provider, defaults.model, defaults.thinking]);
+  const target: AuthTarget | null = defaults.model || defaults.provider ? { provider: defaults.provider, model: defaults.model } : null;
+  const check = useRpcQuery(authCheckRpc, { targets: target ? [target] : [] }, { enabled: target !== null, staleTime: 60_000 });
   const save = useRpcMutation(defaultsWriteRpc, {
-    invalidates: ["pi.overview"],
+    invalidates: ["pi.overview", "pi.auth.check"],
     success: "Saved the default model to settings.json",
     onSuccess: () => setEditing(false),
   });
@@ -164,6 +174,8 @@ function Defaults({ defaults }: { defaults: Overview["defaults"] }) {
         </Txt>
         {defaults.thinking ? <Badge label={`thinking ${defaults.thinking}`} /> : null}
       </Row>
+      {check.data?.results[0] ? <AuthLine check={check.data.results[0]} forModel /> : check.isFetching ? <Spinner label="Checking the sign-in" /> : null}
+      {check.error ? <ErrorBox error={check.error} /> : null}
       <Txt size="xs" tone="muted">
         New pi sessions and workflow steps without a model of their own use it.
       </Txt>
@@ -309,6 +321,53 @@ interface DoctorReport {
   warnings?: unknown[];
 }
 
+/** A short status and, when the check is not ready, what to do next. */
+function authStatus(check: AuthCheck, forModel: boolean): { tone: Tone; label: string; next: string | null } {
+  const login = `Run /login ${check.provider} in pi to sign in or save an API key.`;
+  if (check.status === "ready") {
+    return { tone: "success", label: `Ready · ${check.authType === "oauth" ? "signed in to" : "API key set for"} ${check.provider}`, next: null };
+  }
+  if (check.status === "failed") return { tone: "danger", label: `Could not check ${check.provider}`, next: check.error };
+  if (check.status === "invalid") {
+    return {
+      tone: "danger",
+      label: `Could not check ${check.provider}`,
+      next: forModel
+        ? "pi cannot match this model to one provider, or models.json does not load. Choose the model again with Change."
+        : "models.json does not load, so pi cannot check providers. Fix the error that Health lists for it.",
+    };
+  }
+  const reasons: Record<string, { label: string; next: string }> = {
+    provider_not_found: {
+      label: `pi does not know ${check.provider}`,
+      next: "Check the provider name, the disabledProviders list in settings.json, and models.json.",
+    },
+    credentials_not_configured: { label: `Not signed in to ${check.provider}`, next: login },
+    credential_not_available: { label: `No usable credential for ${check.provider}`, next: login },
+  };
+  const known = check.reason ? reasons[check.reason] : undefined;
+  return { tone: "danger", label: known?.label ?? `Not ready${check.reason ? ` (${check.reason})` : ""}`, next: known?.next ?? login };
+}
+
+function AuthLine({ check, forModel }: { check: AuthCheck; forModel?: boolean }) {
+  const status = authStatus(check, Boolean(forModel));
+  return (
+    <Stack gap={2}>
+      <Row gap={6}>
+        <StatusDot tone={status.tone} />
+        <Txt size="sm" weight={status.next ? "600" : undefined} tone={status.next ? "danger" : undefined}>
+          {status.label}
+        </Txt>
+      </Row>
+      {status.next ? (
+        <Txt size="xs" tone="muted" style={{ paddingLeft: 14 }}>
+          {status.next}
+        </Txt>
+      ) : null}
+    </Stack>
+  );
+}
+
 function asText(value: unknown): string {
   return typeof value === "string" ? value : JSON.stringify(value);
 }
@@ -321,7 +380,7 @@ function Label({ children }: { children: string }) {
   );
 }
 
-function Health({ cwd }: { cwd: string }) {
+function Health({ cwd, onOpenMcp }: { cwd: string; onOpenMcp: () => void }) {
   const doctor = useRpcQuery(doctorRpc, { cwd: cwd || undefined }, { staleTime: 60_000 });
   const report = doctor.data?.report as DoctorReport | null | undefined;
   const problems = report?.problems ?? [];
@@ -329,6 +388,14 @@ function Health({ cwd }: { cwd: string }) {
   const servers = report?.mcp?.servers ?? [];
   const files = (report?.config?.files ?? []).filter((file) => file.exists);
   const fileErrors = files.flatMap((file) => file.errors.map((error) => `${file.name}: ${error}`));
+  const providers = report?.auth?.providers ?? [];
+  const checks = useRpcQuery(
+    authCheckRpc,
+    { targets: providers.map((provider) => ({ provider: provider.provider, model: null })) },
+    { enabled: providers.length > 0, staleTime: 60_000 },
+  );
+  const results = checks.data?.results ?? [];
+  const notReady = results.filter((check) => check.status !== "ready");
   const items = [
     ...problems.map((p) => ({ tone: "danger" as const, text: asText(p) })),
     ...warnings.map((w) => ({ tone: "warning" as const, text: asText(w) })),
@@ -336,7 +403,19 @@ function Health({ cwd }: { cwd: string }) {
   ];
   return (
     <Card>
-      <CardTitle icon="Stethoscope" title="Health" right={<Button small variant="ghost" icon="RefreshCw" label="Check" busy={doctor.isFetching} onPress={() => void doctor.refetch()} />} />
+      <CardTitle icon="Stethoscope" title="Health" right={<Button
+            small
+            variant="ghost"
+            icon="RefreshCw"
+            label="Check"
+            busy={doctor.isFetching || checks.isFetching}
+            onPress={() => {
+              void doctor.refetch();
+              void checks.refetch();
+            }}
+          />
+        }
+      />
       {doctor.isLoading ? <Spinner label="Running pi doctor" /> : null}
       {doctor.data?.error ? <ErrorBox error={doctor.data.error} /> : null}
       {report ? (
@@ -357,15 +436,36 @@ function Health({ cwd }: { cwd: string }) {
           ))}
           {report.path?.shadowed ? <Notice>Another pi binary comes first on PATH.</Notice> : null}
           <Stack gap={6}>
-            <Label>Signed in</Label>
+            <Label>{checks.data ? `Providers · ${results.length - notReady.length} of ${results.length} ready` : "Providers"}</Label>
+            {providers.length === 0 ? (
+              <Txt size="sm" tone="muted">
+                No provider is signed in. Run /login in pi to sign in or save an API key.
+              </Txt>
+            ) : null}
             <Row gap={6} wrap>
-              {(report.auth?.providers ?? []).map((provider) => (
-                <Badge key={provider.provider} label={provider.provider} icon={provider.authType === "oauth" ? "BadgeCheck" : "KeyRound"} />
-              ))}
+              {providers.map((provider, index) => {
+                const check = results[index];
+                if (check && check.status !== "ready") return null;
+                return (
+                  <Badge
+                    key={provider.provider}
+                    label={provider.provider}
+                    tone={check ? "success" : "muted"}
+                    icon={provider.authType === "oauth" ? "BadgeCheck" : "KeyRound"}
+                  />
+                );
+              })}
             </Row>
+            {notReady.map((check) => (
+              <AuthLine key={check.provider} check={check} />
+            ))}
+            {checks.error ? <ErrorBox error={checks.error} /> : null}
           </Stack>
           <Stack gap={6}>
-            <Label>{`MCP servers · ${servers.filter((s) => s.enabled).length} of ${servers.length} on`}</Label>
+            <Row justify="space-between" gap={8}>
+              <Label>{`MCP servers · ${servers.filter((s) => s.enabled).length} of ${servers.length} on`}</Label>
+              <Button small variant="ghost" icon="ArrowRight" label="Manage" onPress={onOpenMcp} />
+            </Row>
             <Row gap={6} wrap>
               {servers.map((server) => (
                 <Badge key={server.name} label={server.name} tone={server.enabled ? "success" : "muted"} icon={server.enabled ? "Plug" : "Unplug"} />
@@ -381,13 +481,52 @@ function Health({ cwd }: { cwd: string }) {
 interface UsageWindow {
   label?: string;
   usedPercent?: number;
-  resetsAt?: string;
+  resetsAt?: string | null;
+  /** `model` when the window limits only the model `families`. */
+  scope?: string;
+  families?: string[];
+}
+
+interface ProviderUsage {
+  provider: string;
+  plan?: string | null;
+  windows?: UsageWindow[];
+  error?: string | null;
+  /** Why the read failed, such as `login`, `rateLimited`, or `unsupported`. */
+  errorKind?: string;
+  fetchedAt?: number;
+  retryAfterMs?: number;
+  credits?: { available: boolean; unlimited: boolean; balance?: string };
+}
+
+function creditsText(credits: ProviderUsage["credits"]): string | null {
+  if (!credits) return null;
+  if (credits.unlimited) return "Unlimited credits";
+  if (!credits.available) return "No credits";
+  return credits.balance ? `${credits.balance} credits` : "Credits available";
+}
+
+function windowLabel(limit: UsageWindow, index: number): string {
+  const label = limit.label ?? `limit ${index + 1}`;
+  if (limit.scope !== "model") return label;
+  return `${label} · ${limit.families?.length ? `${limit.families.join(", ")} only` : "some models only"}`;
+}
+
+function UsageError({ usage }: { usage: ProviderUsage }) {
+  const tone: Tone = usage.errorKind === "unsupported" ? "muted" : usage.errorKind === "rateLimited" ? "warning" : "danger";
+  const retryAt = usage.retryAfterMs && usage.fetchedAt ? new Date(usage.fetchedAt + usage.retryAfterMs) : null;
+  const error = retryAt ? (usage.error ?? "").replace(/\s*Try again later\.?$/, "") : usage.error;
+  return (
+    <Txt size="xs" tone={tone}>
+      {`${error}${retryAt ? ` Try again after ${retryAt.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}.` : ""}`}
+    </Txt>
+  );
 }
 
 function Limits() {
   const [enabled, setEnabled] = useState(false);
   const usage = useRpcQuery(usageRpc, {}, { enabled, staleTime: 60_000 });
-  const report = usage.data?.report as { providers?: { provider: string; plan?: string | null; error?: string | null; windows?: UsageWindow[] }[] } | null | undefined;
+  const report = usage.data?.report as { providers?: ProviderUsage[] } | null | undefined;
   return (
     <Card>
       <CardTitle
@@ -403,39 +542,54 @@ function Limits() {
         <Spinner label="Asking the providers" />
       ) : usage.data?.error ? (
         <ErrorBox error={usage.data.error} />
+      ) : report?.providers?.length === 0 ? (
+        <Txt size="sm" tone="muted">
+          No sign-in reports limits. Run /login in pi for anthropic, openai-codex, cursor, xai, or google-antigravity.
+        </Txt>
       ) : report?.providers ? (
         <Stack gap={14}>
-          {report.providers.map((provider) => (
-            <Stack key={provider.provider} gap={6}>
-              <Row gap={6}>
-                <Txt size="sm" weight="600">
-                  {provider.provider}
-                </Txt>
-                {provider.plan ? <Badge label={provider.plan} /> : null}
-              </Row>
-              {provider.error ? (
-                <Txt size="xs" tone="danger">
-                  {provider.error}
-                </Txt>
-              ) : null}
-              {(provider.windows ?? []).map((limit, index) => {
-                const percent = limit.usedPercent ?? 0;
-                return (
-                  <Stack key={index} gap={3}>
-                    <Row justify="space-between" gap={10}>
-                      <Txt size="xs" numberOfLines={1} style={{ flex: 1 }}>
-                        {limit.label ?? `limit ${index + 1}`}
-                      </Txt>
-                      <Txt size="xs" tone={percent > 85 ? "danger" : "muted"} style={{ flexShrink: 0 }}>
-                        {`${Math.round(percent)}%${limit.resetsAt ? ` · resets ${new Date(limit.resetsAt).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "numeric" })}` : ""}`}
-                      </Txt>
-                    </Row>
-                    <ProgressBar value={percent / 100} tone={percent > 85 ? "danger" : percent > 65 ? "warning" : "success"} />
-                  </Stack>
-                );
-              })}
-            </Stack>
-          ))}
+          {report.providers.map((provider) => {
+            const credits = creditsText(provider.credits);
+            return (
+              <Stack key={provider.provider} gap={6}>
+                <Row justify="space-between" gap={8} wrap>
+                  <Row gap={6} style={{ flexShrink: 1 }}>
+                    <Txt size="sm" weight="600" numberOfLines={1} style={{ flexShrink: 1 }}>
+                      {provider.provider}
+                    </Txt>
+                    {provider.plan ? <Badge label={provider.plan} /> : null}
+                  </Row>
+                  {credits ? (
+                    <Txt size="xs" tone="muted" style={{ flexShrink: 0 }}>
+                      {credits}
+                    </Txt>
+                  ) : null}
+                </Row>
+                {provider.error ? <UsageError usage={provider} /> : null}
+                {!provider.error && !provider.windows?.length ? (
+                  <Txt size="xs" tone="muted">
+                    No limits reported.
+                  </Txt>
+                ) : null}
+                {(provider.windows ?? []).map((limit, index) => {
+                  const percent = limit.usedPercent ?? 0;
+                  return (
+                    <Stack key={index} gap={3}>
+                      <Row justify="space-between" gap={10} wrap>
+                        <Txt size="xs" numberOfLines={1} style={{ flexGrow: 1, flexShrink: 1 }}>
+                          {windowLabel(limit, index)}
+                        </Txt>
+                        <Txt size="xs" tone={percent > 85 ? "danger" : "muted"} style={{ flexShrink: 0 }}>
+                          {`${Math.round(percent)}%${limit.resetsAt ? ` · resets ${new Date(limit.resetsAt).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "numeric" })}` : ""}`}
+                        </Txt>
+                      </Row>
+                      <ProgressBar value={percent / 100} tone={percent > 85 ? "danger" : percent > 65 ? "warning" : "success"} />
+                    </Stack>
+                  );
+                })}
+              </Stack>
+            );
+          })}
         </Stack>
       ) : (
         <CodeBlock text={JSON.stringify(usage.data?.report, null, 2)} />
@@ -444,14 +598,34 @@ function Limits() {
   );
 }
 
+interface StatsDay {
+  /** `YYYY-MM-DD`, a local day of the daemon machine. */
+  date: string;
+  sessions?: number;
+  cost?: number;
+  tokens?: { total?: number };
+}
+
 interface StatsReport {
+  /** ISO start of the counted period, with `since`. */
+  since?: string | null;
   sessions?: number;
   prompts?: number;
   assistantTurns?: number;
   cost?: number;
   tokens?: { total?: number };
   byModel?: StatsRow[];
+  byProvider?: StatsRow[];
+  byDay?: StatsDay[];
 }
+
+const STATS_PERIODS = [
+  { label: "All time", value: "all" },
+  { label: "30 days", value: "30d" },
+  { label: "7 days", value: "7d" },
+  { label: "24 hours", value: "24h" },
+] as const;
+type StatsPeriod = (typeof STATS_PERIODS)[number]["value"];
 
 function compactNumber(value: number | undefined): string {
   if (value === undefined) return "0";
@@ -462,27 +636,32 @@ function compactNumber(value: number | undefined): string {
 }
 
 function Stats({ cwd }: { cwd: string }) {
-  const { theme } = useUi();
+  const { theme, compact } = useUi();
   const [all, setAll] = useState(!cwd);
-  const stats = useRpcQuery(statsRpc, { cwd: cwd || undefined, all: all || !cwd }, { staleTime: 60_000 });
+  const [period, setPeriod] = useState<StatsPeriod>("all");
+  const since = period === "all" ? undefined : period;
+  const stats = useRpcQuery(statsRpc, { cwd: cwd || undefined, all: all || !cwd, since }, { staleTime: 60_000 });
   const report = stats.data?.report as StatsReport | null | undefined;
-  const top = (report?.byModel ?? []).slice(0, 6);
-  const maxCost = Math.max(0.01, ...top.map((row) => row.cost ?? 0));
+  const where = all || !cwd ? "Every pi session on this machine" : "pi sessions in this workspace";
+  const periodLabel = STATS_PERIODS.find((option) => option.value === period)?.label.toLowerCase();
   return (
     <Section
       title="Usage"
-      description={all || !cwd ? "Every pi session on this machine" : "pi sessions in this workspace"}
+      description={since ? `${where}, last ${periodLabel}` : where}
       right={
-        cwd ? (
-          <Chips
-            options={[
-              { label: "This workspace", value: "project" },
-              { label: "Everywhere", value: "all" },
-            ]}
-            value={all ? "all" : "project"}
-            onChange={(value) => setAll(value === "all")}
-          />
-        ) : null
+        <Row gap={16} wrap style={{ flexShrink: 1 }}>
+          {cwd ? (
+            <Chips
+              options={[
+                { label: "This workspace", value: "project" },
+                { label: "Everywhere", value: "all" },
+              ]}
+              value={all ? "all" : "project"}
+              onChange={(value) => setAll(value === "all")}
+            />
+          ) : null}
+          <Chips options={STATS_PERIODS} value={period} onChange={setPeriod} />
+        </Row>
       }
     >
       {stats.isLoading ? <Spinner /> : null}
@@ -496,28 +675,118 @@ function Stats({ cwd }: { cwd: string }) {
             <Figure label="Tokens" value={compactNumber(report.tokens?.total)} />
             <Figure label="Cost" value={`$${(report.cost ?? 0).toFixed(2)}`} />
           </Row>
-          {top.length ? <View style={{ height: 1, backgroundColor: theme.colors.border, marginVertical: 6 }} /> : null}
-          {top.map((row, index) => (
-            <Stack key={index} gap={3}>
-              <Row justify="space-between" gap={12}>
-                <Txt size="sm" mono numberOfLines={1} style={{ flex: 1 }}>
-                  {statsRowName(row)}
-                </Txt>
-                <Txt size="sm" weight="600" style={{ flexShrink: 0 }}>
-                  {`$${(row.cost ?? 0).toFixed(2)}`}
-                </Txt>
-              </Row>
-              <Txt size="xs" tone="muted">
-                {`${row.sessions ? `${row.sessions} session${row.sessions === 1 ? "" : "s"} · ` : ""}${compactNumber(row.tokens?.total)} tokens`}
-              </Txt>
-              <View style={{ height: 3, borderRadius: 2, backgroundColor: theme.colors.surface2 }}>
-                <View style={{ height: 3, borderRadius: 2, width: `${Math.round(((row.cost ?? 0) / maxCost) * 100)}%`, backgroundColor: tint(theme.colors.accent, 0.9) }} />
+          <View style={{ height: 1, backgroundColor: theme.colors.border, marginVertical: 6 }} />
+          {report.sessions ? (
+            <Stack gap={20}>
+              <View style={{ flexDirection: compact ? "column" : "row", gap: compact ? 20 : 32 }}>
+                <Breakdown title="By model" rows={report.byModel ?? []} />
+                <Breakdown title="By provider" rows={report.byProvider ?? []} />
               </View>
+              <Days days={report.byDay ?? []} since={report.since ?? null} />
             </Stack>
-          ))}
+          ) : (
+            <Txt size="sm" tone="muted">
+              {since ? "No pi sessions in this period. Choose a longer period." : "No pi sessions yet."}
+            </Txt>
+          )}
         </Card>
       ) : null}
     </Section>
+  );
+}
+
+/** The six most expensive rows, with bars relative to the first. */
+function Breakdown({ title, rows }: { title: string; rows: StatsRow[] }) {
+  const { theme } = useUi();
+  const top = rows.slice(0, 6);
+  const maxCost = Math.max(0.01, ...top.map((row) => row.cost ?? 0));
+  return (
+    <Stack gap={10} style={{ flex: 1, minWidth: 0 }}>
+      <Label>{title}</Label>
+      {top.map((row, index) => (
+        <Stack key={index} gap={3}>
+          <Row justify="space-between" gap={12}>
+            <Txt size="sm" mono numberOfLines={1} style={{ flex: 1 }}>
+              {statsRowName(row)}
+            </Txt>
+            <Txt size="sm" weight="600" style={{ flexShrink: 0 }}>
+              {`$${(row.cost ?? 0).toFixed(2)}`}
+            </Txt>
+          </Row>
+          <Txt size="xs" tone="muted">
+            {`${row.sessions ? `${row.sessions} session${row.sessions === 1 ? "" : "s"} · ` : ""}${compactNumber(row.tokens?.total)} tokens`}
+          </Txt>
+          <View style={{ height: 3, borderRadius: 2, backgroundColor: theme.colors.surface2 }}>
+            <View style={{ height: 3, borderRadius: 2, width: `${Math.round(((row.cost ?? 0) / maxCost) * 100)}%`, backgroundColor: tint(theme.colors.accent, 0.9) }} />
+          </View>
+        </Stack>
+      ))}
+    </Stack>
+  );
+}
+
+function dateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+/** pi counts days over the last 14; a shorter period starts the row at its first day. */
+function lastDays(since: string | null): string[] {
+  const now = new Date();
+  const start = since ? new Date(since).getTime() : -Infinity;
+  const keys: string[] = [];
+  for (let back = 13; back >= 0; back--) {
+    const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() - back);
+    const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() - back + 1);
+    if (next.getTime() > start) keys.push(dateKey(day));
+  }
+  return keys;
+}
+
+const DAY_BAR_HEIGHT = 64;
+
+function Days({ days, since }: { days: StatsDay[]; since: string | null }) {
+  const { theme } = useUi();
+  const byDate = new Map(days.map((day) => [day.date, day]));
+  const keys = lastDays(since);
+  const byCost = days.some((day) => (day.cost ?? 0) > 0);
+  const amount = (day: StatsDay | undefined) => (byCost ? day?.cost : day?.tokens?.total) ?? 0;
+  const format = (day: StatsDay) => `${byCost ? `$${(day.cost ?? 0).toFixed(2)} · ` : ""}${compactNumber(day.tokens?.total)} tokens`;
+  const max = Math.max(0, ...keys.map((key) => amount(byDate.get(key))));
+  const busiest = days.reduce<StatsDay | undefined>((best, day) => (amount(day) > amount(best) ? day : best), undefined);
+  const short = (key: string) => new Date(`${key}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return (
+    <Stack gap={6}>
+      <Label>{`Last ${keys.length} day${keys.length === 1 ? "" : "s"}${byCost ? " · cost" : " · tokens"}`}</Label>
+      <Row gap={3} align="flex-end" style={{ height: DAY_BAR_HEIGHT }}>
+        {keys.map((key) => {
+          const day = byDate.get(key);
+          const value = amount(day);
+          return (
+            <View
+              key={key}
+              accessibilityLabel={day ? `${short(key)}: ${format(day)}` : `${short(key)}: no sessions`}
+              style={{
+                flex: 1,
+                height: value > 0 && max > 0 ? Math.max(3, Math.round((value / max) * DAY_BAR_HEIGHT)) : 2,
+                borderRadius: 2,
+                backgroundColor: value > 0 ? tint(theme.colors.accent, 0.9) : theme.colors.surface2,
+              }}
+            />
+          );
+        })}
+      </Row>
+      <Row justify="space-between" gap={8}>
+        <Txt size="xs" tone="muted">
+          {short(keys[0])}
+        </Txt>
+        <Txt size="xs" tone="muted">
+          Today
+        </Txt>
+      </Row>
+      <Txt size="xs" tone="muted">
+        {busiest ? `Busiest day: ${short(busiest.date)} · ${format(busiest)}` : "No sessions on these days."}
+      </Txt>
+    </Stack>
   );
 }
 

@@ -4,9 +4,10 @@
 
 A [Paseo](https://paseo.sh) plugin for [Pi Rust](https://github.com/yannelli/pi-rust). It manages pi, its extensions, subscription accounts, Claude Code plugins, skills, prompts, and context, and the multi-agent workflows of the `workflows` extension from the Paseo app, on desktop and on a phone. It works on the same files and commands as pi, so a change in Paseo and a change in pi's own TUI are the same change.
 
-- See pi's version, health, default model, subscription limits, and usage. Update pi, extensions, and model catalogs.
+- See pi's version, health, which providers and which default model are ready to use, subscription limits, and usage by period, model, provider, and day. Update pi, extensions, and model catalogs.
 - Turn extensions on and off, update or remove packages, and install from the marketplace, npm, Git, or a path, globally or for one workspace.
-- Run any extension's commands, edit its config files, and manage deferred's rules for tools, skills, context files, and prompt sections.
+- Run any extension's commands and answer their questions, edit its config files, and manage deferred's rules for tools, skills, context files, and prompt sections.
+- See each MCP server's state, tools, and errors. Turn servers on and off, sign in and out, and add and remove them.
 - Keep several Claude and Codex subscriptions behind one provider: add and remove accounts, watch their usage, and choose how requests pick an account, fall back to another provider, and spend Codex usage resets.
 - Add Claude Code plugin marketplaces, and install, update, turn off, and uninstall their plugins.
 - See every skill and prompt template pi loads, from every folder, plugin, and package. Turn them on and off, edit them, and create new ones.
@@ -46,11 +47,15 @@ The plugin finds pi through its settings, then `$PI_BIN`, then `pi` on the daemo
 
 ## Use
 
-Open **Pi Rust** from the sidebar or the Command Center (**⌘K**). The workspace picker at the top chooses the project that project settings, extensions, workflows, and sessions refer to; it lists Paseo workspaces by project and branch and remembers your choice.
+Open **Pi Rust** from the sidebar or the Command Center (**⌘K**). The workspace picker at the top chooses the project that project settings, extensions, workflows, and sessions refer to; it lists Paseo workspaces by project and branch and remembers your choice. The screen and the Workflows panel use the phone layout when they are narrow, such as in a split pane or the Explorer.
 
 ### Overview
 
-Tiles show pi's version, the extensions that are on, the workflows, and the runs. Below them you can change the default model (**Use claude-opus-5-5 · medium** sets the recommended one), update pi, extensions, or model catalogs, run `pi doctor`, check subscription limits, and read usage by model. **settings.json** edits pi's global or workspace settings.
+Tiles show pi's version, the extensions that are on, the workflows, and the runs. Below them you can change the default model (**Use claude-opus-5-5 · medium** sets the recommended one), update pi, extensions, or model catalogs, run `pi doctor`, check subscription limits, and read usage. **settings.json** edits pi's global or workspace settings.
+
+- **Health** checks each provider `pi doctor` lists with `pi auth check --no-refresh`. A provider that is not ready says why and what to do, such as running `/login groq` in pi. The **Default model** card says whether its provider is ready and checks again after you change it. Because the check does not refresh tokens, it cannot see an expired or revoked sign-in. **Manage** next to the MCP servers opens the MCP tab.
+- **Subscription limits** shows each provider's plan and windows, Codex credits, windows that apply to some models only, and errors with the time to retry.
+- **Usage** counts pi sessions in this workspace or everywhere, over all time, 30 days, 7 days, or 24 hours, with cost by model and by provider and a bar for each of the last 14 days.
 
 ### Extensions
 
@@ -60,13 +65,25 @@ Switch built-in and installed extensions on or off, update or remove packages, s
 
 Tap an extension to manage it:
 
-- **Commands.** Run its slash commands, such as `/deferred status`, `/goal-status`, `/todos`, or `/bg-clear`, and read their output. Each runs in a temporary pi session in the workspace; a command that would start an agent turn is stopped, and questions that need pi's UI are cancelled.
+- **Commands.** Run its slash commands, such as `/deferred status`, `/goal-status`, `/todos`, or `/bg-clear`, and read their output. Each runs in a temporary pi session in the workspace. When a command asks something (a choice, yes or no, a line of text, or a longer text), Paseo shows the question and sends your answer back; **Cancel** answers as Escape does in pi, and a question with a time limit shows the seconds left. A command that starts an agent turn is stopped in the temporary session; **Run in a new pi agent** runs it as the first prompt of a new pi agent on pi's default model and opens that agent.
 - **Config files.** Edit `ext/<name>.json` in pi's agent directory and in the workspace's `.pi` folder.
 - **Docs.** Open the extension's README.
 
 **deferred** gets its own manager. It lists every rule from the five places the extension reads (global and workspace `deferred.json`, the global and workspace `deferred` setting, and repo blocks) in the order they apply, with a one-tap mode switch for each: `on`, `names`, `deferred`, `user` (skills), or `off`. Add a rule for tools, skills, context files, or prompt sections, globally, for the workspace, or for the workspace's GitHub repository, with suggestions from pi's skills, MCP servers, and tools. **Check a name** shows which rule decides a tool or skill. It also sets `auto` and `maxResults` and shows `/deferred status`. Rules in `deferred.json` files are read-only, as in pi.
 
 ![The deferred manager: status, options, a name check that resolves mcp__github__delete_repo to off by a repo rule, and the tool rules with mode switches](assets/screenshots/deferred.png)
+
+### MCP servers
+
+Lists the MCP servers pi uses for the workspace: the global `~/.pi/agent/mcp.json`, and the workspace's `.pi/mcp.json` when pi trusts the workspace. Each server shows its state (Connected, Needs sign-in, Failed with the error, or Off), transport, exposure, tools, and project overrides. pi connects to each server to check it, so the list takes a few seconds; **Refresh** asks again.
+
+- The switch sets `enabled` where pi reads it: in the project override when the workspace overrides a global server, else in the file that defines the server.
+- **Sign in** runs `pi mcp login` on the daemon machine and opens the sign-in page. When the browser runs on another device, the page it lands on after the sign-in does not load: paste that page's address, and the plugin passes it to pi on the daemon machine. **Sign out** runs `pi mcp logout`.
+- **Add server** takes a URL with optional headers, or a command with arguments and environment variables, for every workspace or for this one, and an exposure. **Remove** asks first.
+
+New pi sessions use the changes; running ones after `/reload`. The Command Center item **Pi Rust: MCP servers** opens the tab.
+
+![The MCP tab: connected servers with their tools, one that needs sign-in, one that failed with its error, one turned off by a project override, and a workspace server](assets/screenshots/mcp.png)
 
 ### Subscriptions
 
@@ -131,13 +148,13 @@ In a worktree, the tab also lists the workflows saved in the main checkout and r
 
 ### Status in the chat
 
-Each pi agent's composer has a **Pi Rust** pill next to Tasks and Subagents; other agents get it while a run is active in their workspace. The label sums up the agent's work, such as `Approve · 1 bg · 2 runs`. The popover shows approvals, the background tasks of the agent's pi session with their output, workflow runs, the workspace's goal, and timers, and refreshes every second or two.
+Each pi agent's composer has a **Pi Rust** pill next to Tasks and Subagents; other agents get it while a workflow run they started, or one in their folder that no other Paseo agent started, is active. The label sums up the agent's work, such as `Approve · 1 bg · 2 runs`. The popover shows approvals, the background tasks of the agent's pi session with the end of their output, workflow runs, the workspace's goal, and timers, and refreshes every second or two. A run that a Paseo agent started shows only on that agent.
 
-![The composer of a pi agent with the Pi Rust pill open: an approval, a running E2E suite with its output, a failed lint, a finished type check, runs, a goal, and a timer](assets/screenshots/composer.png)
+![The composer of a pi agent with the Pi Rust pill open: an approval, and a running E2E suite with the end of its output. The popover scrolls to the failed lint, the finished type check, runs, the goal, and a timer](assets/screenshots/composer.png)
 
 ### Composer and agents
 
-- `/workflow run <name> key=value` starts a run and adds a live card to the agent's timeline; `--worktree[=branch]` runs it in a new worktree. `/workflow approve`, `stop`, `resume`, and `skip` control runs.
+- `/workflow run <name> key=value` starts a run and adds a live card to the agent's timeline; `--worktree[=branch]` runs it in a new worktree and `--fg` in the foreground. `/workflow approve`, `stop`, `resume`, and `skip` control runs, `/workflow new` opens the editor on a new workflow, and `/workflow runs`, `status`, `list`, and `edit <name>` open the matching view. A run card shows a resume within about 10 seconds, wherever it came from.
 - `/pi-ext install|remove|enable|disable|update <source> [-l]` manages extensions.
 - Paseo agents get the `pi_workflows` and `pi_extensions` tools; `pi_extensions` can also run an extension's command, such as `deferred status`. An agent that starts a run gets the step reports as a message when the run ends. The tools cannot approve tasks.
 
@@ -156,7 +173,7 @@ Each pi agent's composer has a **Pi Rust** pill next to Tasks and Subagents; oth
 
 ## Data and permissions
 
-The plugin runs `pi` and `git` on the daemon machine. It reads and writes pi's settings, workflow definitions, run directories, and session files, the system prompt, context, skill, and prompt files you edit, reads the state files of the `background-tasks`, `goal`, and `timers` extensions, starts the workflows runner as a detached process, and signals a background task's process group when you stop it. It creates Paseo worktrees only when you ask for one. Updates and installs download from the Pi Rust releases, the extension marketplace, npm, or Git, as `pi` does; Claude plugin marketplaces and plugins are cloned from Git by the `claude-marketplace` extension. The plugin sends nothing anywhere else.
+The plugin runs `pi` and `git` on the daemon machine. It reads and writes pi's settings, workflow definitions, run directories, session files, and `mcp.json` files, the system prompt, context, skill, and prompt files you edit, reads the state files of the `background-tasks`, `goal`, and `timers` extensions, starts the workflows runner as a detached process, and signals a background task's process group when you stop it. It creates Paseo worktrees only when you ask for one, and Paseo agents only when you choose **Run in a new pi agent**. During an MCP sign-in it requests the address you paste, which must point to this machine (`127.0.0.1`, `localhost`, or `[::1]`), so that pi's sign-in listener receives the code. Readiness checks run `pi auth check` without reading credentials or refreshing tokens. Edits keep a file's permissions. Updates and installs download from the Pi Rust releases, the extension marketplace, npm, or Git, as `pi` does; Claude plugin marketplaces and plugins are cloned from Git by the `claude-marketplace` extension. The plugin sends nothing anywhere else.
 
 Project workflows and settings follow pi's project trust: the plugin does not save project workflows where pi does not trust the directory.
 

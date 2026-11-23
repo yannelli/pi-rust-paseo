@@ -391,7 +391,21 @@ export function setup() {
   task(
     "a1b2c3d4",
     { name: "E2E suite", description: "Desktop and mobile Playwright suite", command: "npm run test:e2e -- --workers=4", pid: sleeper.pid, processStart: lstart(), status: "running", startedAt: now - 4 * MINUTE, timeoutSeconds: 900 },
-    "Running 148 tests using 4 workers\n\n  ✓  1 [desktop] › limits.spec.ts:12 › returns 429 after the limit (1.2s)\n  ✓  2 [desktop] › limits.spec.ts:31 › resets after the window (0.9s)\n  ✓  3 [mobile] › auth.spec.ts:8 › signs in (1.4s)\n  ·  4 [mobile] › limits.spec.ts:44 › separate keys\n",
+    [
+      "Running 148 tests using 4 workers\n",
+      "  ✓  1 [desktop] › limits.spec.ts:12 › returns 429 after the limit (1.2s)",
+      "  ✓  2 [desktop] › limits.spec.ts:31 › resets after the window (0.9s)",
+      "  ✓  3 [mobile] › auth.spec.ts:8 › signs in (1.4s)",
+      "  ✓  4 [mobile] › limits.spec.ts:44 › separate keys (1.1s)",
+      "  ✓  5 [desktop] › auth.spec.ts:21 › signs out (0.7s)",
+      "  ✓  6 [desktop] › keys.spec.ts:9 › creates a key (1.6s)",
+      "  ✓  7 [mobile] › keys.spec.ts:27 › revokes a key (1.3s)",
+      "  ✓  8 [desktop] › limits.spec.ts:58 › counts per route (1.0s)",
+      "  ✓  9 [mobile] › limits.spec.ts:12 › returns 429 after the limit (1.5s)",
+      "  ✓ 10 [desktop] › dashboard.spec.ts:14 › shows usage (2.2s)",
+      "  · 11 [mobile] › dashboard.spec.ts:30 › filters by key",
+      "",
+    ].join("\n"),
   );
   task("e5f6a7b8", { name: "Type check", description: "tsc --noEmit for the workspace", command: "npx tsc --noEmit", status: "completed", exitCode: 0, startedAt: now - 9 * MINUTE, endedAt: now - 8 * MINUTE });
   task("c9d0e1f2", { name: "Lint", description: "Biome check of the changed files", command: "npx biome check src", status: "failed", exitCode: 1, startedAt: now - 7 * MINUTE, endedAt: now - 6 * MINUTE }, "src/http/limits.ts:14:7 lint/style/useConst  This let is only assigned once.\nFound 1 error.\n");
@@ -517,6 +531,70 @@ const marketplace = [
   ["workflows", "Fixed and dynamic multi-agent workflows with per-step models, tools, skills, MCP servers, and approvals.", "v0.5.13"],
 ];
 
+// Overview: sign-in checks and usage stats --------------------------------------------------
+
+/** Providers doctor reports, with how they sign in; groq's key went missing from the environment. */
+const demoAuth = [
+  ["anthropic", "oauth"],
+  ["openai-codex", "oauth"],
+  ["xai", "oauth"],
+  ["openrouter", "api_key"],
+  ["groq", "api_key"],
+];
+
+/** `pi auth check --no-refresh` for one target. */
+function demoAuthCheck({ provider, model }) {
+  const name = provider ?? model.split("/")[0];
+  const known = demoAuth.find(([id]) => id === name);
+  if (!known) return { status: "not_ready", provider: name, authType: null, reason: "provider_not_found", error: null };
+  if (name === "groq") return { status: "not_ready", provider: name, authType: null, reason: "credentials_not_configured", error: null };
+  return { status: "ready", provider: name, authType: known[1], reason: null, error: null };
+}
+
+/** `pi stats --json`, scaled to the chosen period, with the days of the last two weeks. */
+function demoStats(now, since) {
+  const share = { "30d": 0.55, "7d": 0.2, "24h": 0.04 }[since] ?? 1;
+  const startMs = since ? now - { "30d": 30, "7d": 7, "24h": 1 }[since] * 86_400_000 : null;
+  const tokens = (total) => ({ total: Math.round(total * share) });
+  const row = (name, sessions, cost, total) => ({ name, sessions: Math.max(1, Math.round(sessions * share)), cost: cost * share, tokens: tokens(total) });
+  const dayCosts = [6.1, 0, 14.2, 22.8, 9.4, 0, 0, 18.6, 31.2, 12.5, 7.9, 26.4, 19.3, 8.7];
+  const byDay = dayCosts
+    .map((cost, index) => {
+      const day = new Date(now - (13 - index) * 86_400_000);
+      const date = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+      return { date, start: new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime(), sessions: Math.ceil(cost / 6), cost, tokens: { total: Math.round(cost * 3_100_000) } };
+    })
+    .filter((day) => day.cost > 0 && (startMs === null || day.start + 86_400_000 > startMs))
+    .map(({ start, ...day }) => day);
+  return {
+    report: {
+      scope: "project",
+      since: startMs === null ? null : new Date(startMs).toISOString(),
+      sessions: Math.round(64 * share),
+      prompts: Math.round(311 * share),
+      assistantTurns: Math.round(5204 * share),
+      cost: 286.41 * share,
+      tokens: tokens(912_400_000),
+      byModel: [
+        row("anthropic/claude-opus-5-5", 31, 171.2, 521_300_000),
+        row("openai/gpt-6.1-terra", 18, 72.85, 248_900_000),
+        row("xai/grok-4.7", 6, 21.3, 45_800_000),
+        row("anthropic/claude-haiku-5-5", 9, 21.06, 96_400_000),
+      ],
+      byProvider: [row("anthropic", 38, 192.26, 617_700_000), row("openai", 18, 72.85, 248_900_000), row("xai", 6, 21.3, 45_800_000)],
+      byDay,
+    },
+    error: null,
+  };
+}
+
+/** A sign-in that waits for the browser, as `pi mcp login` reports it. */
+function mcpLogin(name) {
+  const redirect = encodeURIComponent("http://localhost:53682/callback");
+  const url = `https://mcp.linear.app/authorize?response_type=code&client_id=pi-rust&code_challenge_method=S256&state=8f2c41&redirect_uri=${redirect}`;
+  return { id: "0f1e2d3c4b5a6978", name, state: "waiting", url, message: null, output: `Sign in to MCP server "${name}" in your browser:\n${url}\n` };
+}
+
 /** Canned answers for the RPCs that would otherwise run pi on the rendering machine. */
 export function fixtures(now = Date.now()) {
   return {
@@ -535,38 +613,50 @@ export function fixtures(now = Date.now()) {
         install: { method: "release" },
         path: { shadowed: false },
         config: { files: [{ name: "settings", path: `${HOME}/.pi/agent/settings.json`, exists: true, errors: [] }] },
-        auth: { providers: [{ provider: "anthropic", authType: "oauth" }, { provider: "openai-codex", authType: "oauth" }, { provider: "xai", authType: "api_key" }] },
+        auth: { providers: demoAuth.map(([provider, authType]) => ({ provider, authType })) },
         mcp: { servers: [{ name: "context7", enabled: true, transport: "http" }, { name: "github", enabled: true, transport: "stdio" }, { name: "playwright", enabled: false, transport: "stdio" }] },
         problems: [],
         warnings: [],
       },
       error: null,
     }),
+    "pi.auth.check": ({ targets }) => ({ results: targets.map(demoAuthCheck) }),
     "pi.usage": () => ({
       report: {
         providers: [
-          { provider: "anthropic", plan: "max", windows: [{ label: "5-hour", usedPercent: 18, resetsAt: new Date(now + 3 * 3600_000).toISOString() }, { label: "Weekly", usedPercent: 42, resetsAt: new Date(now + 4 * 86_400_000).toISOString() }] },
-          { provider: "openai-codex", plan: "pro", windows: [{ label: "Weekly", usedPercent: 23, resetsAt: new Date(now + 5 * 86_400_000).toISOString() }] },
+          {
+            provider: "anthropic",
+            plan: "max",
+            windows: [
+              { label: "5-hour", usedPercent: 18, resetsAt: new Date(now + 3 * 3600_000).toISOString(), scope: "provider" },
+              { label: "Weekly", usedPercent: 42, resetsAt: new Date(now + 4 * 86_400_000).toISOString(), scope: "provider" },
+              { label: "Weekly", usedPercent: 71, resetsAt: new Date(now + 4 * 86_400_000).toISOString(), scope: "model", families: ["opus"] },
+            ],
+            error: null,
+            fetchedAt: now,
+          },
+          {
+            provider: "openai-codex",
+            plan: "pro",
+            windows: [{ label: "Weekly", usedPercent: 23, resetsAt: new Date(now + 5 * 86_400_000).toISOString(), scope: "provider" }],
+            error: null,
+            fetchedAt: now,
+            credits: { available: true, unlimited: false, balance: "12.40" },
+          },
+          {
+            provider: "xai",
+            plan: null,
+            windows: [],
+            error: "The usage endpoint is rate limited (HTTP 429). Try again later.",
+            errorKind: "rateLimited",
+            fetchedAt: now,
+            retryAfterMs: 20 * MINUTE,
+          },
         ],
       },
       error: null,
     }),
-    "pi.stats": () => ({
-      report: {
-        sessions: 64,
-        prompts: 311,
-        assistantTurns: 5204,
-        cost: 286.41,
-        tokens: { total: 912_400_000 },
-        byModel: [
-          { name: "anthropic/claude-opus-5-5", sessions: 31, cost: 171.2, tokens: { total: 521_300_000 } },
-          { name: "openai/gpt-6.1-terra", sessions: 18, cost: 72.85, tokens: { total: 248_900_000 } },
-          { name: "anthropic/claude-haiku-5-5", sessions: 9, cost: 21.06, tokens: { total: 96_400_000 } },
-          { name: "xai/grok-4.7", sessions: 6, cost: 21.3, tokens: { total: 45_800_000 } },
-        ],
-      },
-      error: null,
-    }),
+    "pi.stats": ({ since }) => demoStats(now, since),
     "pi.models": () => ({
       models: ["anthropic/claude-opus-5-5", "anthropic/claude-sonnet-5-5", "anthropic/claude-haiku-5-5", "openai/gpt-6.1-terra", "openai/gpt-6.1-sol", "xai/grok-4.7"].map((id) => {
         const [provider, model] = id.split("/");
@@ -640,5 +730,52 @@ export function fixtures(now = Date.now()) {
       ],
     }),
     "pi.settings.read": () => ({ path: `${HOME}/.pi/agent/settings.json`, exists: true, text: '{\n  "defaultProvider": "anthropic",\n  "defaultModel": "claude-opus-5-5"\n}\n' }),
+    ...commandDialogs,
+
+    // MCP servers ------------------------------------------------------------------------------
+    "mcp.list": ({ cwd }) => {
+      const globalConfig = `${HOME}/.pi/agent/mcp.json`;
+      const projectConfig = cwd ? `${cwd}/.pi/mcp.json` : null;
+      const server = (fields) => ({ scope: "global", source: globalConfig, override: null, enabled: true, exposure: "codemode", state: "connected", tools: [], toolExposure: null, resources: false, error: null, oauth: false, ...fields });
+      const servers = [
+        server({ name: "context7", transport: "https://mcp.context7.com/mcp", tools: ["resolve-library-id", "query-docs"], oauth: true }),
+        server({ name: "github", exposure: "deferred", transport: "npx -y @modelcontextprotocol/server-github", tools: ["create_pull_request", "get_pull_request", "list_issues", "create_issue", "search_code", "get_file_contents", "push_files"], toolExposure: { push_files: "hidden" }, resources: true }),
+        server({ name: "linear", transport: "https://mcp.linear.app/mcp", state: "needs-auth", error: "The server requires sign-in.", oauth: true }),
+        server({ name: "sentry", exposure: "direct", transport: "https://mcp.sentry.dev/mcp", state: "failed", error: "HTTP 502 Bad Gateway from https://mcp.sentry.dev/mcp", oauth: true }),
+        server({ name: "playwright", transport: "npx -y @playwright/mcp --headless", enabled: false, state: "disabled", override: projectConfig }),
+      ];
+      if (cwd) servers.push(server({ name: "acme-db", scope: "project", source: projectConfig, exposure: "direct", transport: "./scripts/db-mcp --read-only", tools: ["query", "describe_table", "list_tables"] }));
+      return { servers, errors: [], note: null, trusted: Boolean(cwd), globalConfig, projectConfig };
+    },
+    "mcp.login.start": ({ name }) => mcpLogin(name),
+    "mcp.login.status": () => mcpLogin("linear"),
   };
 }
+
+// Interactive extension commands: /goal asks for an objective and then starts an agent turn,
+// /bg-clear asks to confirm, /todos offers a choice, and /timers opens an editor. Other commands
+// finish at once.
+const demoDialogs = {
+  goal: { method: "input", title: "What should the goal achieve?", placeholder: "Rate limit the public API per key", timeoutMs: null },
+  "bg-clear": { method: "confirm", title: "Remove finished tasks?", message: "3 finished background tasks and their output files will be deleted.", timeoutMs: 30_000 },
+  todos: { method: "select", title: "Todo plan", options: ["Show the plan", "Add a task", "Mark the current task done", "Clear finished tasks"], timeoutMs: null },
+  timers: { method: "editor", title: "Edit the heartbeat prompt", prefill: "Check the CI run of PR 212 and report failures.\n", timeoutMs: null },
+};
+const commandDialogs = {
+  "ext.command.start": ({ command }) => {
+    const dialog = demoDialogs[command];
+    if (!dialog) return { status: "done", result: { disposition: "handled", agentInvoked: false, neededUi: false, output: [{ level: "info", text: `/${command} ran.` }] } };
+    return {
+      status: "waiting",
+      session: `demo-${command}`,
+      dialog: { id: `dialog-${command}`, message: null, options: [], placeholder: null, prefill: null, secret: false, ...dialog },
+      output: command === "bg-clear" ? [{ level: "info", text: "3 finished, 1 running." }] : [],
+    };
+  },
+  "ext.command.answer": ({ session }) => {
+    const command = session.slice("demo-".length);
+    const text = { goal: "Drafting the goal.", "bg-clear": "Removed 3 finished tasks.", todos: "Plan: 2 of 4 tasks done.", timers: "Saved the heartbeat prompt." }[command] ?? `/${command} ran.`;
+    return { status: "done", result: { disposition: "handled", agentInvoked: command === "goal", neededUi: false, output: [{ level: "info", text }] } };
+  },
+  "ext.command.stop": () => ({ stopped: true }),
+};

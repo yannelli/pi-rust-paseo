@@ -3,6 +3,7 @@ import type { PluginRpcContract, RpcInput, RpcOutput } from "@getpaseo/plugin";
 import type { input as ZodInput, output as ZodOutput, ZodType } from "zod";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import {
+  authCheckRpc,
   catalogRpc,
   dirInfoRpc,
   defaultsWriteRpc,
@@ -10,7 +11,10 @@ import {
   extensionsInfoRpc,
   extensionsListRpc,
   extensionsRunRpc,
+  extensionCommandAnswerRpc,
   extensionCommandRunRpc,
+  extensionCommandStartRpc,
+  extensionCommandStopRpc,
   extensionCommandsRpc,
   extensionConfigReadRpc,
   extensionConfigWriteRpc,
@@ -39,6 +43,7 @@ import {
   workflowsListRpc,
 } from "../shared/contracts";
 import {
+  authCheck,
   doctor,
   extensionInfo,
   listExtensions,
@@ -59,7 +64,7 @@ import {
 import { agentDir, piBinary, piVersion } from "./pi";
 import { activeCounts, controlRun, getRun, listRuns, runFiles, runOutput, startRunRpc, steerRun, workflowsExtension } from "./runs";
 import { agentStatus, statusSummary, stopTask, taskLog } from "./status";
-import { deferredConfig, deferredOptions, deferredSet, extensionCommands, readExtensionConfig, runExtensionCommand, writeExtensionConfig } from "./extensions";
+import { answerExtensionCommand, deferredConfig, deferredOptions, deferredSet, extensionCommands, readExtensionConfig, runExtensionCommand, startExtensionCommand, stopExtensionCommand, writeExtensionConfig } from "./extensions";
 import { deferredConfigRpc, deferredOptionsRpc, deferredSetRpc } from "../shared/deferred";
 import { dirInfo } from "./where";
 import { claudeRunRpc, claudeStateRpc } from "../shared/claude";
@@ -81,6 +86,18 @@ import {
 import { context, createPrompt, createSkill, deleteFile, deleteSkill, prompts, readResource, skills, toggleResource, writeFile } from "./resources";
 import { agentStatusRpc, statusSummaryRpc, taskLogRpc, taskStopRpc } from "../shared/status";
 import { catalog, deleteWorkflow, draftWorkflow, getWorkflow, listWorkflows, saveWorkflowRpc } from "./workflows";
+import {
+  mcpAddRpc,
+  mcpListRpc,
+  mcpLoginCancelRpc,
+  mcpLoginRedirectRpc,
+  mcpLoginStartRpc,
+  mcpLoginStatusRpc,
+  mcpLogoutRpc,
+  mcpRemoveRpc,
+  mcpToggleRpc,
+} from "../shared/mcp";
+import { addMcp, cancelLogin, listMcp, loginStatus, logoutMcp, redirectLogin, removeMcp, startLogin, toggleMcp } from "./mcp";
 
 async function overview(_input: RpcInput<typeof overviewRpc>): Promise<RpcOutput<typeof overviewRpc>> {
   const path = piBinary();
@@ -135,6 +152,7 @@ export function registerHandlers(server: PluginServerContext, remember: (paseo: 
 
   handle(overviewRpc, overview);
   handle(doctorRpc, doctor);
+  handle(authCheckRpc, authCheck);
   handle(updateRpc, update);
   handle(modelsRpc, models);
   handle(settingsReadRpc, readSettings);
@@ -157,6 +175,9 @@ export function registerHandlers(server: PluginServerContext, remember: (paseo: 
   handle(extensionsRunRpc, runExtension);
   handle(extensionCommandsRpc, extensionCommands);
   handle(extensionCommandRunRpc, runExtensionCommand);
+  handle(extensionCommandStartRpc, startExtensionCommand);
+  handle(extensionCommandAnswerRpc, answerExtensionCommand);
+  handle(extensionCommandStopRpc, stopExtensionCommand);
   handle(extensionConfigReadRpc, readExtensionConfig);
   handle(extensionConfigWriteRpc, writeExtensionConfig);
   handle(deferredConfigRpc, deferredConfig);
@@ -179,6 +200,16 @@ export function registerHandlers(server: PluginServerContext, remember: (paseo: 
   handle(routerPolicySaveRpc, saveRouterPolicy);
   handle(routerProfilesSaveRpc, saveRouterProfiles);
   handle(routerRunRpc, runRouter);
+
+  handle(mcpListRpc, listMcp);
+  handle(mcpToggleRpc, toggleMcp);
+  handle(mcpAddRpc, addMcp);
+  handle(mcpRemoveRpc, removeMcp);
+  handle(mcpLogoutRpc, logoutMcp);
+  handle(mcpLoginStartRpc, (input) => startLogin(input));
+  handle(mcpLoginStatusRpc, loginStatus);
+  handle(mcpLoginRedirectRpc, redirectLogin);
+  handle(mcpLoginCancelRpc, cancelLogin);
 
   handle(workflowsListRpc, listWorkflows);
   handle(workflowGetRpc, getWorkflow);

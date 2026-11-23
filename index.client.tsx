@@ -78,6 +78,14 @@ export default function contribute(client: PluginClientContext) {
     onSelect: (context) => open(context, { tab: "extensions" }),
   });
   client.addCommandCenterItem({
+    id: "mcp",
+    title: "Pi Rust: MCP servers",
+    icon: "Plug",
+    keywords: ["pi", "mcp", "servers", "sign in", "oauth"],
+    context: "global",
+    onSelect: (context) => open(context, { tab: "mcp" }),
+  });
+  client.addCommandCenterItem({
     id: "runs",
     title: "Pi Rust: Workflow runs",
     icon: "Activity",
@@ -105,7 +113,7 @@ export default function contribute(client: PluginClientContext) {
   client.addSlashCommand({
     name: "workflow",
     description: "Run, approve, or control Pi Rust workflows",
-    argumentHint: "[run <name> key=value… [--worktree[=branch]] | approve [id] [run|skip|stop] | stop|resume|skip <id> | runs | edit <name>]",
+    argumentHint: "[list | new | edit <name> | run <name> [key=value…] [--fg] [--worktree] | runs | status [id] | approve [id] [skip|stop] | stop|resume|skip <id>]",
     context: "agent",
     async onSubmit(context) {
       const { args, agent, workspace, rpc, openPanel } = context;
@@ -113,9 +121,13 @@ export default function contribute(client: PluginClientContext) {
       const command = parseWorkflowCommand(args);
       switch (command.kind) {
         case "open":
-        case "new":
           openPanel(PANEL_ID);
           return;
+        case "new": {
+          const { trusted } = await rpc(workflowsListRpc, { cwd });
+          open(context, { tab: "workflows", new: "1", scope: cwd && trusted ? "project" : "global", cwd });
+          return;
+        }
         case "runs":
           open(context, { tab: "runs" });
           return;
