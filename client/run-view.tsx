@@ -7,7 +7,7 @@ import { runFilesRpc, runGetRpc, runOutputRpc, runSteerRpc } from "../shared/con
 import { costLabel, isActive, type OutputEntry, type RunDetail, type StepRun, type StepStatus } from "../shared/runs";
 import { formatDuration } from "../shared/workflow";
 import { poll, useRpcMutation, useRpcQuery } from "./queries";
-import { ApprovalButtons, RunStatusBadge, StepBar, elapsedLabel, useNow, useRunControl, waitLeft } from "./runs";
+import { ApprovalButtons, RunStatusBadge, StepBar, elapsedLabel, runRefresh, useNow, useRunControl, waitLeft } from "./runs";
 import { WorkspaceChip } from "./workspaces";
 import {
   Badge,
@@ -78,12 +78,7 @@ function RunBody({ id, onBack }: { id: string; onBack?: () => void }) {
   const query = useRpcQuery(
     runGetRpc,
     { id },
-    {
-      refetchInterval: (state) => {
-        const run = state.state.data?.run;
-        return run && live(run) ? 1000 : false;
-      },
-    },
+    { refetchInterval: (state) => runRefresh(state.state.data?.run, 1000) },
   );
   const run = query.data?.run;
   const active = run ? live(run) : false;

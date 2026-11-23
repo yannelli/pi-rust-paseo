@@ -7,7 +7,7 @@ import { runGetRpc, type RunCard } from "../shared/contracts";
 import { costLabel, isActive, type RunDetail } from "../shared/runs";
 import { openRun } from "./host";
 import { useRpcQuery } from "./queries";
-import { ApprovalButtons, RunStatusBadge, StepBar, elapsedLabel, useNow, useRunControl, waitLeft } from "./runs";
+import { ApprovalButtons, RunStatusBadge, StepBar, elapsedLabel, runRefresh, useNow, useRunControl, waitLeft } from "./runs";
 import { WorkspaceChip } from "./workspaces";
 import { Button, ErrorBox, Row, Spinner, Stack, StatusDot, Txt, UiProvider, errorMessage, relativeTime, tint, useUi } from "./ui";
 
@@ -21,13 +21,6 @@ export function RunCardRow(props: PluginTimelineItemProps<RunCard>) {
 
 function live(run: RunDetail): boolean {
   return isActive(run.status) && !run.stale;
-}
-
-/** A live run refreshes often; an ended run slowly, since any client can resume it, unless it is done. */
-function refreshEvery(run: RunDetail | undefined): number | false {
-  if (!run) return false;
-  if (live(run)) return 2000;
-  return run.status === "done" ? false : 10_000;
 }
 
 function Frame({ workflow, right, children }: { workflow: string; right?: ReactNode; children?: ReactNode }) {
@@ -60,7 +53,7 @@ function RunCardBody({ runId, workflow }: { runId: string; workflow: string }) {
   const query = useRpcQuery(
     runGetRpc,
     { id: runId },
-    { refetchInterval: (state) => refreshEvery(state.state.data?.run) },
+    { refetchInterval: (state) => runRefresh(state.state.data?.run, 2000) },
   );
   const run = query.data?.run;
   const active = run ? live(run) : false;

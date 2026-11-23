@@ -3,7 +3,7 @@ import { Icon } from "@getpaseo/plugin/client/ui";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Pressable, View } from "react-native";
 import { runControlRpc, runsListRpc } from "../shared/contracts";
-import { costLabel, isActive, statusLabel, type Decision, type RunStatus, type RunSummary, type StepStatus } from "../shared/runs";
+import { costLabel, isActive, statusLabel, type Decision, type RunDetail, type RunStatus, type RunSummary, type StepStatus } from "../shared/runs";
 import { formatDuration } from "../shared/workflow";
 import { useRpcMutation, useRpcQuery } from "./queries";
 import { WorkspaceChip } from "./workspaces";
@@ -21,6 +21,13 @@ export function useNow(active: boolean): number {
     return () => clearInterval(timer);
   }, [active]);
   return now;
+}
+
+/** How often a run refreshes: every `liveMs` while live, slowly once ended since any client can resume it, never once done. */
+export function runRefresh(run: RunDetail | undefined, liveMs: number): number | false {
+  if (!run) return false;
+  if (isActive(run.status) && !run.stale) return liveMs;
+  return run.status === "done" ? false : 10_000;
 }
 
 export function useRunControl() {
