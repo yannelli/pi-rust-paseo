@@ -517,6 +517,13 @@ const marketplace = [
   ["workflows", "Fixed and dynamic multi-agent workflows with per-step models, tools, skills, MCP servers, and approvals.", "v0.5.13"],
 ];
 
+/** A sign-in that waits for the browser, as `pi mcp login` reports it. */
+function mcpLogin(name) {
+  const redirect = encodeURIComponent("http://localhost:53682/callback");
+  const url = `https://mcp.linear.app/authorize?response_type=code&client_id=pi-rust&code_challenge_method=S256&state=8f2c41&redirect_uri=${redirect}`;
+  return { id: "0f1e2d3c4b5a6978", name, state: "waiting", url, message: null, output: `Sign in to MCP server "${name}" in your browser:\n${url}\n` };
+}
+
 /** Canned answers for the RPCs that would otherwise run pi on the rendering machine. */
 export function fixtures(now = Date.now()) {
   return {
@@ -640,5 +647,23 @@ export function fixtures(now = Date.now()) {
       ],
     }),
     "pi.settings.read": () => ({ path: `${HOME}/.pi/agent/settings.json`, exists: true, text: '{\n  "defaultProvider": "anthropic",\n  "defaultModel": "claude-opus-5-5"\n}\n' }),
+
+    // MCP servers ------------------------------------------------------------------------------
+    "mcp.list": ({ cwd }) => {
+      const globalConfig = `${HOME}/.pi/agent/mcp.json`;
+      const projectConfig = cwd ? `${cwd}/.pi/mcp.json` : null;
+      const server = (fields) => ({ scope: "global", source: globalConfig, override: null, enabled: true, exposure: "codemode", state: "connected", tools: [], toolExposure: null, resources: false, error: null, oauth: false, ...fields });
+      const servers = [
+        server({ name: "context7", transport: "https://mcp.context7.com/mcp", tools: ["resolve-library-id", "query-docs"], oauth: true }),
+        server({ name: "github", exposure: "deferred", transport: "npx -y @modelcontextprotocol/server-github", tools: ["create_pull_request", "get_pull_request", "list_issues", "create_issue", "search_code", "get_file_contents", "push_files"], toolExposure: { push_files: "hidden" }, resources: true }),
+        server({ name: "linear", transport: "https://mcp.linear.app/mcp", state: "needs-auth", error: "The server requires sign-in.", oauth: true }),
+        server({ name: "sentry", exposure: "direct", transport: "https://mcp.sentry.dev/mcp", state: "failed", error: "HTTP 502 Bad Gateway from https://mcp.sentry.dev/mcp", oauth: true }),
+        server({ name: "playwright", transport: "npx -y @playwright/mcp --headless", enabled: false, state: "disabled", override: projectConfig }),
+      ];
+      if (cwd) servers.push(server({ name: "acme-db", scope: "project", source: projectConfig, exposure: "direct", transport: "./scripts/db-mcp --read-only", tools: ["query", "describe_table", "list_tables"] }));
+      return { servers, errors: [], note: null, trusted: Boolean(cwd), globalConfig, projectConfig };
+    },
+    "mcp.login.start": ({ name }) => mcpLogin(name),
+    "mcp.login.status": () => mcpLogin("linear"),
   };
 }

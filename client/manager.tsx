@@ -9,6 +9,7 @@ import { isActive } from "../shared/runs";
 import { ContextTab } from "./context";
 import { ExtensionsTab } from "./extensions";
 import { lastCwd, rememberCwd, type ManagerTab } from "./host";
+import { McpTab } from "./mcp";
 import { OverviewTab } from "./overview";
 import { PluginsTab } from "./plugins";
 import { useRpcQuery } from "./queries";
@@ -24,6 +25,7 @@ import { kindIcon, useWorkspaceIndex, WorkspaceChip, WorkspacePickerModal } from
 const TABS: readonly { id: ManagerTab; label: string; icon: string }[] = [
   { id: "overview", label: "Overview", icon: "LayoutDashboard" },
   { id: "extensions", label: "Extensions", icon: "Puzzle" },
+  { id: "mcp", label: "MCP", icon: "Plug" },
   { id: "subscriptions", label: "Subscriptions", icon: "Gauge" },
   { id: "plugins", label: "Claude plugins", icon: "Store" },
   { id: "skills", label: "Skills", icon: "Sparkles" },
@@ -155,6 +157,7 @@ function Manager({ params }: { params: Record<string, string> }) {
         <Stack gap={16}>
           {tab === "overview" ? <OverviewTab cwd={cwd} onNavigate={setTab} /> : null}
           {tab === "extensions" ? <ExtensionsTab cwd={cwd} onNavigate={setTab} /> : null}
+          {tab === "mcp" ? <McpTab cwd={cwd} /> : null}
           {tab === "subscriptions" ? <SubscriptionsTab /> : null}
           {tab === "plugins" ? <PluginsTab cwd={cwd} /> : null}
           {tab === "skills" ? <SkillsTab cwd={cwd} onOpenPlugins={() => setTab("plugins")} /> : null}
