@@ -86,6 +86,18 @@ import {
 import { context, createPrompt, createSkill, deleteFile, deleteSkill, prompts, readResource, skills, toggleResource, writeFile } from "./resources";
 import { agentStatusRpc, statusSummaryRpc, taskLogRpc, taskStopRpc } from "../shared/status";
 import { catalog, deleteWorkflow, draftWorkflow, getWorkflow, listWorkflows, saveWorkflowRpc } from "./workflows";
+import {
+  mcpAddRpc,
+  mcpListRpc,
+  mcpLoginCancelRpc,
+  mcpLoginRedirectRpc,
+  mcpLoginStartRpc,
+  mcpLoginStatusRpc,
+  mcpLogoutRpc,
+  mcpRemoveRpc,
+  mcpToggleRpc,
+} from "../shared/mcp";
+import { addMcp, cancelLogin, listMcp, loginStatus, logoutMcp, redirectLogin, removeMcp, startLogin, toggleMcp } from "./mcp";
 
 async function overview(_input: RpcInput<typeof overviewRpc>): Promise<RpcOutput<typeof overviewRpc>> {
   const path = piBinary();
@@ -188,6 +200,16 @@ export function registerHandlers(server: PluginServerContext, remember: (paseo: 
   handle(routerPolicySaveRpc, saveRouterPolicy);
   handle(routerProfilesSaveRpc, saveRouterProfiles);
   handle(routerRunRpc, runRouter);
+
+  handle(mcpListRpc, listMcp);
+  handle(mcpToggleRpc, toggleMcp);
+  handle(mcpAddRpc, addMcp);
+  handle(mcpRemoveRpc, removeMcp);
+  handle(mcpLogoutRpc, logoutMcp);
+  handle(mcpLoginStartRpc, (input) => startLogin(input));
+  handle(mcpLoginStatusRpc, loginStatus);
+  handle(mcpLoginRedirectRpc, redirectLogin);
+  handle(mcpLoginCancelRpc, cancelLogin);
 
   handle(workflowsListRpc, listWorkflows);
   handle(workflowGetRpc, getWorkflow);

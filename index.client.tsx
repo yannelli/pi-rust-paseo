@@ -78,6 +78,14 @@ export default function contribute(client: PluginClientContext) {
     onSelect: (context) => open(context, { tab: "extensions" }),
   });
   client.addCommandCenterItem({
+    id: "mcp",
+    title: "Pi Rust: MCP servers",
+    icon: "Plug",
+    keywords: ["pi", "mcp", "servers", "sign in", "oauth"],
+    context: "global",
+    onSelect: (context) => open(context, { tab: "mcp" }),
+  });
+  client.addCommandCenterItem({
     id: "runs",
     title: "Pi Rust: Workflow runs",
     icon: "Activity",
